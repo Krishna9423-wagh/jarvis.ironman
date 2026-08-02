@@ -6,32 +6,43 @@ searches the web, generates images, drives your phone, reads your mail. The face
 is a web page (React + Vite + Three.js + custom GLSL). The brain is Claude Code,
 run headless as a library.
 
-It works with **zero API keys**. Everything below runs on the browser's own
-speech out of the box, and quietly upgrades itself if you add an ElevenLabs key.
+**The only subscription you need is Claude Code.** No API keys, no OpenAI
+account, no cloud bill — the brain runs on your existing Claude Code login, and
+the heavy work (the model itself) runs on Anthropic's servers, so even a low-end
+laptop only has to draw the interface. **ElevenLabs is an optional add-on** that
+gives JARVIS a much better voice and sharper hearing; without it he speaks and
+listens through the browser's own speech, and everything still works.
 
 ---
 
 ## Requirements
 
-- **Node.js 20 or newer** (the maintainer runs 26).
+**In one line:** a Claude Code subscription, plus two free things every computer
+can have — Node.js and Chrome. That's the whole list.
+
+- **Claude Code, installed and logged in** — this is the only account you need.
+  Install it with the official method — `npm install -g @anthropic-ai/claude-code`,
+  or the platform installer at <https://docs.claude.com/en/docs/claude-code> —
+  then run `claude` once and complete login. The bridge reuses that login. **No
+  API key**, and usage is billed to your existing Claude account.
+- **Node.js 20 or newer** — free, one installer from <https://nodejs.org>. This
+  is a Node web app, so it is the one unavoidable tool.
 - **Google Chrome or Microsoft Edge**, in a **real browser window** — not an
   embedded preview pane. Preview panes (including the one inside editors and
   Claude Code) block microphone access, so the page loads and looks right but
   never hears you. JARVIS also needs WebGL, which these browsers provide.
-- **Claude Code, installed and logged in.** Install it with the official method —
-  `npm install -g @anthropic-ai/claude-code`, or the platform installer at
-  <https://docs.claude.com/en/docs/claude-code> — then run `claude` once and
-  complete login. The bridge reuses that login. **No API key is needed in bridge
-  mode**, and usage is billed to your existing Claude account.
-- **Optional: an ElevenLabs API key** for a better voice and sharper
-  transcription. The free tier is plenty for a demo. Without it, everything still
-  works on the browser's own speech.
+- **Optional: an ElevenLabs API key** — a good add-on, not a requirement. It
+  gives a better voice and sharper transcription; the free tier is plenty for a
+  demo. Without it, everything runs on the browser's own speech.
+
+Run `npm run setup` after cloning and it checks all of this for you, in plain
+language.
 
 ---
 
 ## Quick start
 
-Two terminals. First, install:
+First, install, then start it:
 
 ```bash
 npm install
