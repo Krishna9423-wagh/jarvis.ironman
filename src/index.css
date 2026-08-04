@@ -1594,7 +1594,7 @@ kbd {
 /* Sizes are about how the content is meant to be consumed.
    `tall` is a reading measure — roughly 60 characters at the body size in
    page.mjs, which is the width prose is actually legible at. */
-.bl-compact { width: min(88vw, 360px);  height: min(52vh, 300px) }
+.bl-compact { width: min(90vw, 440px);  height: min(58vh, 380px) }
 .bl-tall    { width: min(92vw, 560px);  height: min(82vh, 900px) }
 .bl-wide    { width: min(88vw, 1080px); height: min(72vh, 720px) }
 .bl-full    { width: 92vw;              height: 88vh }

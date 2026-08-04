@@ -127,14 +127,28 @@ export function playBoot() {
   // In fast so the start-up sound lands with the first beat of the boot
   // sequence rather than easing in under it.
   set('boot-music', LEVEL['boot-music'], 120)
-  // The clip runs about seventeen seconds; let it play almost to the end under
-  // the boot and into the first moment of standby, then dissolve rather than
-  // cut so it settles into the ambient bed.
+  /**
+   * Dissolve near the end of whatever clip is actually there.
+   *
+   * This used to be a hardcoded fourteen seconds, measured off the clip that
+   * happened to ship. Drop in a shorter one and the cue ends in silence long
+   * before the fade starts; a longer one gets cut off mid-phrase. Reading the
+   * duration means the boot sound is a file you can replace rather than a file
+   * plus a constant somebody has to remember to change with it.
+   */
   if (dissolve) clearTimeout(dissolve)
-  dissolve = setTimeout(() => {
-    dissolve = null
-    set('boot-music', 0, 2500)
-  }, 14000)
+  const arm = () => {
+    const secs = Number.isFinite(t.el.duration) && t.el.duration > 1 ? t.el.duration : 17
+    // Start the fade far enough from the end that it is a dissolve rather than
+    // a cut, and never sooner than half a second in.
+    const at = Math.max(500, (secs - 2.6) * 1000)
+    dissolve = setTimeout(() => {
+      dissolve = null
+      set('boot-music', 0, 2500)
+    }, at)
+  }
+  if (t.el.readyState >= 1) arm()
+  else t.el.addEventListener('loadedmetadata', arm, { once: true })
 }
 
 export function startAmbient() {

@@ -350,12 +350,26 @@ export function displayServer(emit, emitBlade) {
             ],
           }
         }
-        emit({
-          ...args,
+        /**
+         * Composed markup opens as a blade, not as a card.
+         *
+         * There is one surface now. A second place for things to appear meant
+         * the user had two places to look and the model had a decision to make
+         * every time it wanted to show something — and it made that decision
+         * on grounds it could not possibly know, since only the person looking
+         * at the screen knows whether they are glancing or reading.
+         *
+         * The tool keeps its name and its design system because the model is
+         * fluent in both; only where the result lands has changed.
+         */
+        emitBlade({
           id: `p${Date.now().toString(36)}-${(seq++).toString(36)}`,
+          title: String(args.title ?? '').trim() || 'DISPLAY',
+          kind: 'markup',
+          html: args.html,
+          size: args.slot === 'wide' ? 'wide' : 'compact',
+          hold: args.hold ?? 'turn',
         })
-        // A terse acknowledgement — echoing the panel back would just tempt it
-        // into narrating what it already showed.
         return { content: [{ type: 'text', text: 'On screen.' }] }
       }),
 

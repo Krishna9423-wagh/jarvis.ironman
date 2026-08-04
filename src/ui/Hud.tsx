@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore, accentFor, type Phase } from '../store'
 import { Suggestions } from './Suggestions'
-import { Panels } from './Panels'
 import { BladeSweep, Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
@@ -300,11 +299,11 @@ export function Hud() {
         )}
       </AnimatePresence>
 
-      <Panels />
-
-      {/* After the panels, so a blade sits in front of the cards rather than
-          behind them — it is the thing being looked at, and the cards are the
-          glanceable readout beside it. */}
+      {/* The one surface. Panels used to sit alongside this as a second place
+          for things to appear, which meant two places to look and a decision
+          the model had to make on grounds it could not know. Everything renders
+          here now; Panels.tsx is unmounted rather than deleted so the design
+          system it documents stays findable. */}
       <Blades />
 
       {ui.chrome.suggestions && <Suggestions />}
