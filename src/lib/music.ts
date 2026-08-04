@@ -29,6 +29,18 @@ type Track = {
 const tracks = new Map<Cue, Track>()
 /** Cues whose file failed to load. Retrying only spends another 404. */
 const missing = new Set<Cue>()
+/**
+ * One-shot cues that have finished. They are never started again.
+ *
+ * This exists because of a genuinely nasty interaction. `fadeTo` starts a cue
+ * whenever it is asked for a level above zero and finds the element paused —
+ * which is the right rule for a bed that should be running, and completely
+ * wrong for a track that has ENDED, because an ended element is also a paused
+ * one. Ducking asks for ambient's level every time JARVIS stops speaking, so
+ * the opening music was being resurrected from the top after every single
+ * sentence. It never looped; it was raised from the dead once a turn.
+ */
+const finished = new Set<Cue>()
 const ALL: Cue[] = ['boot-music', 'ambient', 'work']
 let enabled = false
 
@@ -84,6 +96,17 @@ function track(cue: Cue): Track | null {
       },
       { once: true },
     )
+    // A cue that has played out is over. Zeroing `want` as well as recording it
+    // means every later level calculation agrees, rather than leaving a stale
+    // target for something to act on.
+    el.addEventListener(
+      'ended',
+      () => {
+        finished.add(cue)
+        want[cue] = 0
+      },
+      { once: true },
+    )
     t = { el, fade: null }
     tracks.set(cue, t)
   }
@@ -122,7 +145,9 @@ function fadeTo(cue: Cue, to: number, ms: number) {
       if (to === 0) t.el.pause()
     }
   }
-  if (to > 0 && t.el.paused) void t.el.play().catch(() => {})
+  // `finished` is what stops an ended one-shot being restarted by a later
+  // request for its level — see the note where it is declared.
+  if (to > 0 && t.el.paused && !finished.has(cue)) void t.el.play().catch(() => {})
   t.fade = requestAnimationFrame(step)
 }
 
@@ -182,7 +207,10 @@ export function startAmbient() {
   const t = track('ambient')
   if (!t) return
   // From the top every time, so a second power-up in the same page sounds like
-  // the first rather than resuming wherever the last one left off.
+  // the first rather than resuming wherever the last one left off. Deliberately
+  // clearing `finished` too: an explicit power-up is the one thing that IS
+  // allowed to play it again.
+  finished.delete('ambient')
   t.el.currentTime = 0
   set('ambient', LEVEL.ambient, 900)
 }
