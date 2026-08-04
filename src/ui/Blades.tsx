@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion, useDragControls } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, type Blade } from '../store'
 import { BRIDGE_HTTP_URL } from '../config'
 import { sanitisePanelHtml } from './sanitise'
@@ -197,10 +197,67 @@ function Card({
   onExpand: () => void
   onClose: () => void
 }) {
-  const drag = useDragControls()
   /** Size the user has dragged this blade to, overriding the class preset. */
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+  /** Where the user has dragged it, relative to its slot. */
+  const [pos, setPos] = useState({ x: 0, y: 0 })
   const shell = useRef<HTMLDivElement>(null)
+
+  /**
+   * Drag and resize both listen on `window`, and that is the whole trick.
+   *
+   * The obvious implementations do not work by hand. framer-motion's own drag
+   * tracks the pointer through internals we cannot reach, and the resize grip
+   * originally listened on the grip element — but the hand controller aims its
+   * synthetic events with elementFromPoint, and one pixel into a drag the
+   * element under the cursor is no longer the grip. So resizing by hand died on
+   * the first frame, and dragging never started at all.
+   *
+   * Listening on window fixes both for free: a synthetic event dispatched at
+   * whatever is under the cursor still bubbles to window, so these handlers see
+   * a hand and a mouse identically. Which is the property the gesture layer was
+   * designed around — one interaction, not two implementations of it.
+   */
+  const grab = (
+    e: React.PointerEvent,
+    onMove: (dx: number, dy: number) => void,
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const sx = e.clientX
+    const sy = e.clientY
+    const move = (ev: PointerEvent) => onMove(ev.clientX - sx, ev.clientY - sy)
+    const done = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', done)
+      window.removeEventListener('pointercancel', done)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', done)
+    window.addEventListener('pointercancel', done)
+  }
+
+  const onHeadDown = (e: React.PointerEvent) => {
+    // Buttons live in the header too; starting a drag from one would mean the
+    // click never lands.
+    if ((e.target as HTMLElement).closest('button')) return
+    if (!focused) onFocus()
+    if (expanded) return
+    const from = { ...pos }
+    grab(e, (dx, dy) => setPos({ x: from.x + dx, y: from.y + dy }))
+  }
+
+  const onGrip = (e: React.PointerEvent) => {
+    const box = shell.current?.getBoundingClientRect()
+    if (!box) return
+    const from = { w: box.width, h: box.height }
+    grab(e, (dx, dy) =>
+      setSize({
+        w: Math.max(280, Math.min(window.innerWidth * 0.96, from.w + dx)),
+        h: Math.max(180, Math.min(window.innerHeight * 0.94, from.h + dy)),
+      }),
+    )
+  }
 
   /**
    * Resize from the bottom-right grip.
@@ -211,34 +268,6 @@ function Card({
    * cursor crosses into the article it is showing, which is precisely where it
    * always crosses.
    */
-  const onGrip = (e: React.PointerEvent<HTMLSpanElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const box = shell.current?.getBoundingClientRect()
-    if (!box) return
-    const startX = e.clientX
-    const startY = e.clientY
-    const from = { w: box.width, h: box.height }
-    const grip = e.currentTarget
-    grip.setPointerCapture(e.pointerId)
-
-    const move = (ev: PointerEvent) => {
-      setSize({
-        w: Math.max(280, Math.min(window.innerWidth * 0.96, from.w + (ev.clientX - startX))),
-        h: Math.max(180, Math.min(window.innerHeight * 0.94, from.h + (ev.clientY - startY))),
-      })
-    }
-    const done = () => {
-      grip.releasePointerCapture(e.pointerId)
-      grip.removeEventListener('pointermove', move)
-      grip.removeEventListener('pointerup', done)
-      grip.removeEventListener('pointercancel', done)
-    }
-    grip.addEventListener('pointermove', move)
-    grip.addEventListener('pointerup', done)
-    grip.addEventListener('pointercancel', done)
-  }
-
   return (
     /**
      * Two elements, because two different things want the transform.
@@ -270,19 +299,17 @@ function Card({
           (expanded ? ' bl-expanded' : '') +
           (focused ? ' bl-front' : '')
         }
-        // Dragged by the header only. `dragListener={false}` is what makes that
-        // true: without it the whole card is a drag handle, and every attempt to
-        // select a line of the article drags the blade across the screen instead.
-        drag={!expanded}
-        dragControls={drag}
-        dragListener={false}
-        dragMomentum={false}
-        dragElastic={0.04}
-        // Kept inside the window, with enough slack that a blade can be pushed
-        // mostly off-screen when the user wants it out of the way.
-        dragConstraints={{ top: -260, bottom: 260, left: -520, right: 520 }}
-        style={size && !expanded ? { width: size.w, height: size.h } : undefined}
-        onMouseDown={() => {
+        // Position and size are ours rather than framer's — see `grab` above for
+        // why. Applied as a plain transform because the depth animation lives on
+        // the slot wrapper, so nothing is competing for this element's own one.
+        style={{
+          ...(size && !expanded ? { width: size.w, height: size.h } : null),
+          transform: expanded ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
+        }}
+        // pointerdown, not mousedown: a hand dispatches PointerEvents, and a
+        // mousedown handler simply never hears them. Focusing a blade by pinch
+        // was silently impossible until this changed.
+        onPointerDown={() => {
           if (!focused) onFocus()
         }}
       >
@@ -291,26 +318,19 @@ function Card({
         <span className="pk pk-bl" />
         <span className="pk pk-br" />
 
-        <header
-          className="bl-head"
-          onPointerDown={(e) => {
-            // Buttons live in here too; starting a drag from one would mean the
-            // click never lands.
-            if ((e.target as HTMLElement).closest('button')) return
-            if (!expanded) drag.start(e)
-          }}
-        >
+        <header className="bl-head" onPointerDown={onHeadDown}>
           <span className="bl-title">{blade.title}</span>
           <span className="bl-kind">{blade.kind}</span>
           <span className="bl-acts">
-            {size && !expanded && (
+            {(size || pos.x || pos.y) && !expanded && (
               <button
                 className="bl-btn"
                 onClick={(e) => {
                   e.stopPropagation()
                   setSize(null)
+                  setPos({ x: 0, y: 0 })
                 }}
-                title="Back to its normal size"
+                title="Back where it started"
               >
                 ⤾
               </button>
