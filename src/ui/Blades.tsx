@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, type Blade } from '../store'
 import { BRIDGE_HTTP_URL } from '../config'
 import { sanitisePanelHtml } from './sanitise'
+import { twoHandSpan } from '../lib/hands'
 
 /**
  * The blades.
@@ -292,6 +293,47 @@ function Card({
       last = dy
     })
   }
+
+  /**
+   * Pinch with both hands and pull apart to resize the front blade.
+   *
+   * The measurement comes from hands.ts as a plain span between two pinched
+   * cursors — it does not know what a blade is, and should not. What it means
+   * is decided here: the ratio against the span at the moment both hands closed
+   * scales the blade, which is the same arithmetic a trackpad pinch does.
+   *
+   * Only the focused blade, and never while expanded, where the size is the
+   * whole point of the state.
+   */
+  useEffect(() => {
+    if (!focused || expanded) return
+    let raf = 0
+    let from: { span: number; w: number; h: number } | null = null
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const span = twoHandSpan()
+      if (span === null) {
+        from = null
+        return
+      }
+      const box = shell.current?.getBoundingClientRect()
+      if (!box) return
+      if (!from) {
+        // Both hands have just closed. Anchor on the size as it is now.
+        from = { span, w: box.width, h: box.height }
+        return
+      }
+      // Guard the divisor: hands almost touching would send the scale to
+      // infinity and the blade off the screen in one frame.
+      const k = span / Math.max(from.span, 40)
+      setSize({
+        w: Math.max(280, Math.min(window.innerWidth * 0.96, from.w * k)),
+        h: Math.max(180, Math.min(window.innerHeight * 0.94, from.h * k)),
+      })
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [focused, expanded])
 
   const onGrip = (e: React.PointerEvent) => {
     const box = shell.current?.getBoundingClientRect()

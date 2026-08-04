@@ -137,6 +137,19 @@ const GESTURE_HOLD_MS = 120
 /** Below this many pixels of travel, a press was a click rather than a drag. */
 const CLICK_SLOP = 20
 
+/**
+ * How far back a press aims.
+ *
+ * A pinch takes about this long from "hand open, pointing at the thing" to
+ * "fingers touching", and the fingertip travels several centimetres over that
+ * time — so the position at the instant the press fires is not the position you
+ * aimed from. The trail below keeps a short history and the press hit-tests
+ * where the cursor was this long ago.
+ */
+const AIM_LAG_MS = 190
+/** Nothing older than this is kept; two frames' worth of slack over the lag. */
+const TRAIL_MS = 500
+
 export type Gesture = 'point' | 'pinch' | 'open' | 'fist' | 'peace' | 'none'
 export type Side = 'left' | 'right'
 
@@ -282,6 +295,9 @@ type Filters = {
 }
 
 const filters = new Map<number, Filters>()
+
+/** Recent cursor positions per hand, so a press can aim from before the pinch. */
+const trails = new Map<number, { x: number; y: number; at: number }[]>()
 
 function filtersFor(id: number): Filters {
   let f = filters.get(id)
@@ -550,6 +566,7 @@ function dropHand(i: number) {
   filters.get(i)?.joints.forEach((f) => f.reset())
   settling.delete(i)
   sideVote.delete(i)
+  trails.delete(i)
 }
 
 /**
@@ -671,18 +688,33 @@ function loop(mine: number) {
     hand.y = aimed.y
 
     /**
-     * What the press is aimed at, latched before the fingers close.
+     * What the press is aimed at: where the cursor was a moment ago.
      *
-     * Even with the cursor pinned to the fingertip, the fingertip itself
-     * travels several centimetres on its way to meeting the thumb — that is
-     * what pinching IS. So the position at the instant `pinched` flips is not
-     * the position you were aiming from; it is wherever your finger had got to
-     * by then. Remembering where the cursor was while the hand was still open
-     * is what makes a pinch land on the thing you pointed at.
+     * This used to latch the position only while `closeness < 0.35`, which
+     * sounded like "while the hand is open" and is not. Closeness is measured
+     * against the pinch thresholds, so that condition demanded thumb and finger
+     * more than half a hand-span apart — further than anyone holds a hand they
+     * are pointing with. The aim point therefore froze at wherever the hand was
+     * FIRST seen and never moved again, so every pinch pressed at a stale point
+     * somewhere across the screen. Nothing could be focused, grabbed or closed.
+     *
+     * A trail has no such cliff: it always records, and the press simply reads
+     * back AIM_LAG_MS, which is the distance a fingertip covers on its way to
+     * meeting the thumb.
      */
-    if (!pinched && hand.closeness < 0.35) {
-      hand.aimX = aimed.x
-      hand.aimY = aimed.y
+    const trail = trails.get(i) ?? []
+    trail.push({ x: aimed.x, y: aimed.y, at: now })
+    while (trail.length > 1 && now - trail[0].at > TRAIL_MS) trail.shift()
+    trails.set(i, trail)
+
+    if (!pinched) {
+      const want = now - AIM_LAG_MS
+      // The newest sample that is still old enough; the oldest we have if the
+      // hand has only just appeared.
+      let pick = trail[0]
+      for (const p of trail) if (p.at <= want) pick = p
+      hand.aimX = pick.x
+      hand.aimY = pick.y
     }
     hand.pinched = pinched
 
@@ -773,6 +805,7 @@ export function disableHands(): void {
   filters.clear()
   settling.clear()
   sideVote.clear()
+  trails.clear()
   if (video) {
     video.pause()
     video.srcObject = null
@@ -782,6 +815,22 @@ export function disableHands(): void {
   // running, the indicator stays on and the user is right to distrust it.
   stream?.getTracks().forEach((t) => t.stop())
   stream = null
+}
+
+/**
+ * Both hands pinched at once, and how far apart they are.
+ *
+ * Published as a plain measurement rather than as a "zoom", because this file
+ * does not know what is on screen and should not decide what pulling your hands
+ * apart means. Whoever is interested reads the span and chooses — the blades
+ * treat it as a resize, and anything added later is free to treat it as
+ * something else.
+ */
+export function twoHandSpan(): number | null {
+  if (hands.length < 2) return null
+  const [a, b] = hands
+  if (!a.pinched || !b.pinched) return null
+  return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
 export const handsRunning = () => running

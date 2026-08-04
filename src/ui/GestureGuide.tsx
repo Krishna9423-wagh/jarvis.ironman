@@ -20,6 +20,7 @@ const MOVES: { gesture: string; hand: string; does: string }[] = [
   { gesture: 'point', hand: '☝', does: 'move the cursor' },
   { gesture: 'pinch', hand: '🤏', does: 'press · drag · close' },
   { gesture: 'open', hand: '🖐', does: 'let go' },
+  { gesture: 'both', hand: '🤝', does: 'pinch two hands to resize' },
 ]
 
 /** How long the legend stays after the first successful press. */
