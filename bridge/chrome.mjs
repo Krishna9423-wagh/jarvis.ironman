@@ -292,6 +292,39 @@ function toResult(reply) {
 }
 
 /**
+ * Translate an image block from the Anthropic wire format into the MCP one.
+ *
+ * The extension answers a screenshot with the shape the Messages API uses —
+ * `{ type: 'image', source: { type: 'base64', media_type, data } }` — because
+ * that is what its own caller feeds straight back to the model. MCP wants the
+ * flatter `{ type: 'image', data, mimeType }`, and the Agent SDK validates it:
+ * a block carrying neither `data` nor `mimeType` is rejected outright.
+ *
+ * The result was a screenshot that took a perfectly good picture and then
+ * failed, with an error about malformed data that pointed at the page rather
+ * than at the two field names between it and working. Both shapes are accepted
+ * here, because being liberal about which one arrives costs nothing and this is
+ * a private protocol that is free to change again.
+ */
+function normaliseImage(block) {
+  if (typeof block?.data === 'string' && block.mimeType) return block
+  const src = block?.source
+  if (src && typeof src.data === 'string') {
+    return {
+      type: 'image',
+      data: src.data,
+      mimeType: src.media_type ?? src.mimeType ?? 'image/png',
+    }
+  }
+  // Not an image we can hand on. Say so as text rather than passing through a
+  // block the SDK will reject — a described failure beats a rejected turn.
+  return {
+    type: 'text',
+    text: 'The browser returned an image in a form this bridge could not read.',
+  }
+}
+
+/**
  * Strip the extension's own coaching out of its results.
  *
  * Every reply carries a <system-reminder> urging the caller to batch its next
@@ -308,6 +341,7 @@ function toResult(reply) {
 function clean(content) {
   const stripped = content
     .map((block) => {
+      if (block?.type === 'image') return normaliseImage(block)
       if (block?.type !== 'text' || typeof block.text !== 'string') return block
       const text = block.text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()
       return text ? { ...block, text } : null
