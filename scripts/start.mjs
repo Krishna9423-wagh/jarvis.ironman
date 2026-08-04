@@ -61,8 +61,27 @@ function shutdown(code) {
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))
 
+/**
+ * Tell the bridge which port the face will actually be on.
+ *
+ * The bridge only trusts WebSocket origins on localhost:5173-5199 and
+ * 4173-4199, which is the right default — a socket that any local page can open
+ * is a socket that drives every MCP server on the machine. But a launcher that
+ * assigns a port outside that range produces the single most confusing failure
+ * this project has: the interface loads, the reactor spins, the microphone
+ * hears you, and the brain answers nothing, because the handshake is being 403'd
+ * somewhere neither half reports. Passing the port through closes that gap
+ * without widening what the bridge trusts by default.
+ */
+const port = process.env.PORT
+const bridgeEnv = writes ? { JARVIS_ALLOW_WRITES: '1' } : {}
+if (port) {
+  bridgeEnv.JARVIS_ALLOWED_ORIGINS = `http://localhost:${port},http://127.0.0.1:${port}`
+  console.log(`  serving the face on port ${port}; the bridge will accept it.\n`)
+}
+
 console.log('\nJ.A.R.V.I.S. starting — the brain and the face.\n')
-run('bridge', 'node', ['bridge/server.mjs'], '36', writes ? { JARVIS_ALLOW_WRITES: '1' } : {})
+run('bridge', 'node', ['bridge/server.mjs'], '36', bridgeEnv)
 // npm is a shell script on most systems; call the vite binary directly so we do
 // not need shell:true (which would break the argument handling above).
 run('face', process.execPath, ['node_modules/vite/bin/vite.js'], '35', {})

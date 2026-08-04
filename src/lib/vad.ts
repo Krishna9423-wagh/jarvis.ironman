@@ -63,9 +63,19 @@ const RELEASE_RATIO = 0.6
 
 /** Sustained energy for this long confirms speech rather than a knock or click. */
 const START_MS = 110
-/** Quiet for this long ends the utterance. This is the single biggest lever on
- *  how it feels: too short clips people who pause, too long feels laggy. */
-const SILENCE_MS = 800
+/**
+ * Quiet for this long ends the SEGMENT — which is no longer the same thing as
+ * ending the turn.
+ *
+ * It used to be both, which is why this number was impossible to set: long
+ * enough not to clip someone thinking mid-sentence meant every completed
+ * question also sat waiting for nothing. Deciding whether the thought is
+ * actually finished now happens a layer up, on the words rather than the
+ * energy (see makeAssembler in voice.ts), so this can go back to being what it
+ * should always have been — a cheap "have they stopped making noise" — and the
+ * shorter window gets the transcript moving sooner.
+ */
+const SILENCE_MS = 650
 /** Nobody speaks one segment for this long; cut it and transcribe what we have. */
 const MAX_MS = 20000
 

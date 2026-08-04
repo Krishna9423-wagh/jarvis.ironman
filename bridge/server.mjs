@@ -19,17 +19,13 @@ import { WebSocketServer } from 'ws'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
+import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { homedir, tmpdir } from 'node:os'
 import { readFileSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
-// The remote-media proxy is built on the low-level clients rather than fetch()
-// on purpose: it needs a per-connection DNS hook to stop SSRF, manual control
-// of every redirect hop, and a body it can stream and cut off mid-flight.
-import { request as httpRequest } from 'node:http'
-import { request as httpsRequest } from 'node:https'
-import { lookup as dnsLookup } from 'node:dns'
-import { isIP } from 'node:net'
+import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
+import { probeUrl, renderPage } from './page.mjs'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -122,7 +118,7 @@ const MODEL = process.env.JARVIS_MODEL ?? 'claude-opus-5'
  * matters more than pace; drop back to 'low' when filming and every second of
  * dead air shows.
  */
-const EFFORT = process.env.JARVIS_EFFORT ?? 'medium'
+const EFFORT = process.env.JARVIS_EFFORT ?? 'high'
 
 /**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
@@ -268,6 +264,15 @@ function decideTool(name) {
     // a write and would hold the whole surface back behind ALLOW_WRITES.
     if (server === 'jarvis' || server === 'jarvis_ui') return true
 
+    // The browser server gates itself, at construction: chromeServer() only
+    // builds the acting tools — click, type, form input, close tab — when
+    // ALLOW_WRITES is set, so anything that reaches here at all is something
+    // the same policy has already permitted. Deciding it a second time by
+    // reading verbs out of the name would only get it wrong: `chrome_navigate`
+    // begins with no read verb and would fall to the write branch, which would
+    // withhold the one tool the whole server is for.
+    if (server === 'jarvis_chrome') return true
+
     const tool = mcpToolOf(name)
     if (EFFECTFUL_VERB.test(tool) && !VETO_EXEMPT.has(`${server}__${tool}`)) {
       return ALLOW_WRITES
@@ -336,8 +341,28 @@ Plain spoken prose only. No markdown, no bullet points, no headings, no emoji,
 no asterisks, no lists. Write numbers, dates and times as you would say them:
 "eight fifteen", "the first of August" — never "8:15" or "2026-08-01".
 
+The blades — the big surface:
+- \`blade\` opens something to be looked at rather than glanced at: an article to
+  read, a photograph to see properly, a video to watch, a page to study.
+- Anything visual the user asked for goes here. If they asked to see an image,
+  open it. If they asked about an article, open it. If they asked you to read
+  something in detail, open it as an article and let them read it.
+- Blades stack, newest in front, and the user can pull an older one forward or
+  throw one to full screen. So a second blade does not destroy the first.
+- Use \`probe_url\` when you are not certain what a URL is. Never decide from the
+  file extension: image CDNs serve pictures from URLs with no extension, and a
+  link that looks like a video is usually a page about one. Guessing wrong puts
+  a blank rectangle on screen while you describe something that is not there.
+- An article opens in reading mode by default, which works even on sites that
+  refuse to be embedded. Choose the live page when the layout carries the
+  meaning — a dashboard, a chart, a profile, a table.
+- Never read a blade aloud. Say what it means and let them look.
+
 The heads-up display:
 - You have a screen as well as a voice. The \`display\` tool puts a panel on it.
+- A panel is the small readout beside the reactor: a figure, a short list, a
+  status. When the content deserves the frame rather than a corner of it, that
+  is a blade, not a panel.
 - Use it whenever the answer has substance worth seeing rather than hearing:
   search results, images, screenshots, lists of mail or events, a number, a
   passage of text. If you searched, show the results. If you generated an image,
@@ -360,6 +385,19 @@ The interface itself:
   subject moves on.
 - Put it back. A colour that outlives the moment that earned it is a fault.
 - Never mention that you have done any of it. They are looking at the screen.
+
+Their browser:
+- The \`chrome_*\` tools drive the user's own Chrome, already signed in to
+  everything they use. This is how you reach anything behind a login — their
+  mail, their calendar, a dashboard, an account page.
+- Prefer it when the answer is behind a sign-in or has to be seen on the real
+  page. Prefer searching or fetching for an ordinary public page: opening a tab
+  is visible to them and takes over their screen for a moment.
+- Read the page before acting on it, and take element references from that read
+  rather than guessing where something is.
+- Before anything that sends, buys, deletes or posts, say in one sentence what
+  you are about to do. After it, say what happened.
+- If the browser is unreachable, say so once and carry on without it.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
@@ -472,201 +510,9 @@ const MAX_MEDIA_BYTES = 200 * 1024 * 1024
 const IMG_TIMEOUT_MS = 10_000
 const MEDIA_TIMEOUT_MS = 30_000
 
-/** A redirect chain longer than this is a loop or a game, not a CDN. */
-const MAX_REDIRECTS = 4
-
-/**
- * A perfectly ordinary desktop browser, which is the entire point: the hosts we
- * are fetching from serve placeholders to anything that looks automated, and a
- * thumbnail that 403s is the bug we are here to fix. No Referer is sent and the
- * browser's own cookies never come near this, so nothing about the user leaks
- * upstream beyond the fact that some machine asked for a public image.
- */
-const PROXY_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' +
-  ' (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-
-/**
- * Hostnames refused before a packet moves.
- *
- * `.local` is mDNS — every printer, NAS and Home Assistant box on the network
- * answers to it — and `.internal` / `.home.arpa` are the same idea by
- * convention. These never name anything on the public web, so a panel asking
- * for one is either confused or hostile.
- */
-const BLOCKED_HOSTNAME = /(^|\.)(localhost|local|internal|intranet|home\.arpa)$/i
-
-/**
- * Is this *resolved address* one the bridge must not connect to?
- *
- * The list is the usual suspects plus the ones people forget: 169.254.169.254
- * is the cloud metadata endpoint, 100.64/10 is carrier-grade NAT (and Tailscale
- * lives there), 0.0.0.0/8 and the v4-mapped v6 forms are the classic ways of
- * writing "localhost" that a naive string check waves straight through.
- */
-function blockedAddress(ip) {
-  let addr = String(ip ?? '').toLowerCase().split('%')[0]
-  // ::ffff:127.0.0.1 is loopback wearing a hat. Unwrap before judging.
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(addr)
-  if (mapped) addr = mapped[1]
-
-  if (addr.includes('.')) {
-    const parts = addr.split('.').map(Number)
-    if (parts.length !== 4) return true
-    if (parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true
-    const [a, b] = parts
-    if (a === 0) return true // 0.0.0.0/8 — "this network", routes to localhost
-    if (a === 10) return true // 10/8
-    if (a === 127) return true // loopback
-    if (a === 169 && b === 254) return true // link-local AND cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12
-    if (a === 192 && b === 168) return true // 192.168/16
-    if (a === 192 && b === 0) return true // 192.0.0/24 protocol assignments
-    if (a === 100 && b >= 64 && b <= 127) return true // CGNAT / tailnets
-    if (a === 198 && (b === 18 || b === 19)) return true // benchmarking range
-    if (a >= 224) return true // multicast, reserved, broadcast
-    return false
-  }
-
-  if (addr === '::' || addr === '::1') return true
-  if (/^f[cd]/.test(addr)) return true // fc00::/7 unique local
-  if (/^fe[89ab]/.test(addr)) return true // fe80::/10 link-local
-  if (/^ff/.test(addr)) return true // multicast
-  return false
-}
-
-/**
- * The DNS hook every outbound socket goes through.
- *
- * Checking the address *after* resolving and then letting net.connect resolve
- * again would leave a rebinding window — the second answer is free to be
- * 127.0.0.1. So we resolve once here, refuse the whole name if ANY answer is
- * private, and hand the vetted address straight to the connect call, which then
- * does no lookup of its own. Strict on purpose: a public host that also
- * advertises a LAN address is not a host we need to be able to reach.
- */
-function guardedLookup(hostname, options, callback) {
-  const opts = typeof options === 'function' ? {} : (options ?? {})
-  const done = typeof options === 'function' ? options : callback
-  dnsLookup(hostname, { ...opts, all: true }, (err, addresses) => {
-    if (err) return done(err)
-    const list = Array.isArray(addresses) ? addresses : [addresses]
-    if (!list.length) return done(new Error('no address'))
-    for (const entry of list) {
-      if (blockedAddress(entry.address)) {
-        const blocked = new Error(
-          `refusing ${hostname}: resolves to the private address ${entry.address}`,
-        )
-        blocked.code = 'EBLOCKEDADDRESS'
-        return done(blocked)
-      }
-    }
-    if (opts.all) return done(null, list)
-    return done(null, list[0].address, list[0].family)
-  })
-}
-
-/** An error carrying the status we want the browser to see. */
-function proxyError(status, message) {
-  const err = new Error(message)
-  err.status = status
-  return err
-}
-
-/**
- * Only absolute http(s) URLs, and only ones whose host isn't obviously local.
- * Returns a URL or throws a proxyError, so callers can treat parse failure and
- * policy failure the same way.
- */
-function vetTarget(raw) {
-  let url
-  try {
-    url = new URL(String(raw ?? ''))
-  } catch {
-    throw proxyError(400, 'absolute http(s) url required')
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw proxyError(400, 'absolute http(s) url required')
-  }
-  if (!url.hostname) throw proxyError(400, 'absolute http(s) url required')
-  if (BLOCKED_HOSTNAME.test(url.hostname)) throw proxyError(403, 'blocked host')
-  // An IP literal never reaches DNS in any meaningful sense, so judge it here —
-  // this is what turns http://127.0.0.1:8787/health into a refusal before a
-  // socket is opened rather than after.
-  const literal = url.hostname.replace(/^\[|\]$/g, '')
-  if (isIP(literal) && blockedAddress(literal)) {
-    throw proxyError(403, 'blocked host')
-  }
-  return url
-}
-
-/** One hop. Resolves with the IncomingMessage once headers are in. */
-function requestOnce(url, headers, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const req = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
-      method: 'GET',
-      headers,
-      // The SSRF gate. Everything else here is plumbing.
-      lookup: guardedLookup,
-    })
-    // Two different clocks, deliberately. This one is the deadline for getting
-    // headers back at all — a host that accepts the connection and then says
-    // nothing must not hold a panel open for ever.
-    const deadline = setTimeout(() => {
-      req.destroy(proxyError(504, 'upstream timed out'))
-    }, timeoutMs)
-    // And this one is idle-socket: once the body is flowing, a 200 MB video is
-    // allowed to take longer than 30 seconds as long as bytes keep arriving.
-    // A hard total would make the cap on size and the cap on time the same
-    // number, which for video is simply a broken player.
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(proxyError(504, 'upstream stalled'))
-    })
-    req.on('response', (res) => {
-      clearTimeout(deadline)
-      resolve(res)
-    })
-    req.on('error', (err) => {
-      clearTimeout(deadline)
-      reject(
-        err.code === 'EBLOCKEDADDRESS'
-          ? proxyError(403, 'blocked host')
-          : (err.status ? err : proxyError(502, 'upstream unreachable')),
-      )
-    })
-    req.end()
-  })
-}
-
-/**
- * Follow redirects by hand rather than letting a client library do it, because
- * every hop has to be vetted again: a public URL that 302s to
- * http://169.254.169.254/ is the whole SSRF attack, and a redirect to
- * file:// or data: is the other half of it.
- */
-async function openRemote(startUrl, headers, timeoutMs) {
-  let url = startUrl
-  for (let hop = 0; ; hop++) {
-    const res = await requestOnce(url, headers, timeoutMs)
-    const status = res.statusCode ?? 0
-    const location = res.headers.location
-    if (status >= 300 && status < 400 && location) {
-      res.resume() // drain, or the socket never returns to the pool
-      if (hop >= MAX_REDIRECTS) throw proxyError(502, 'too many redirects')
-      let next
-      try {
-        next = new URL(location, url)
-      } catch {
-        throw proxyError(502, 'bad redirect')
-      }
-      // vetTarget re-runs the scheme and host checks; guardedLookup re-runs the
-      // address check when the next hop connects.
-      url = vetTarget(next.href)
-      continue
-    }
-    return { res, url }
-  }
-}
+// The SSRF gate and the guarded outbound clients now live in ./net.mjs, so the
+// media proxy below and the page proxy share one implementation of the rules
+// rather than two that can drift apart.
 
 /**
  * The shared body of /img and /media.
@@ -895,6 +741,44 @@ const handleRequest = async (req, res) => {
     return
   }
 
+  // A whole web page, fetched here and served from this origin so it can be
+  // framed. The publisher's X-Frame-Options and CORS rules are enforced against
+  // the browser, and from the browser's point of view this document is ours —
+  // so an article that refuses to be embedded anywhere still opens on the
+  // display. See page.mjs for what each mode does to the markup.
+  //
+  // No Origin header arrives on an iframe navigation, so this rides the same
+  // path as an <img> load through the check at the top of this handler.
+  if (req.method === 'GET' && req.url?.startsWith('/page?')) {
+    const asked = new URL(req.url, 'http://x')
+    const target = asked.searchParams.get('url') ?? ''
+    const mode = asked.searchParams.get('mode') === 'live' ? 'live' : 'reader'
+    try {
+      const page = await renderPage(target, mode, `http://localhost:${PORT}`)
+      res.writeHead(200, { ...cors, ...page.headers })
+      return res.end(page.body)
+    } catch (err) {
+      // Rendered as a page rather than returned as a status, because this lands
+      // inside an iframe: a bare 502 body is a blank rectangle on the display,
+      // which reads as the interface being broken rather than as the article
+      // being unavailable.
+      res.writeHead(err.status ?? 502, {
+        ...cors,
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+      })
+      return res.end(
+        `<!doctype html><meta charset="utf-8"><style>
+           body{margin:0;padding:26px;background:transparent;color:#7fb6bf;
+                font:400 13px/1.6 ui-monospace,monospace}
+           b{color:#cfe9ee;font-weight:500;display:block;margin-bottom:6px}
+         </style><b>This page could not be opened.</b>${
+           String(err?.message ?? 'unknown error').replace(/[<&]/g, '')
+         }`,
+      )
+    }
+  }
+
   if (req.method === 'POST' && req.url === '/tts') {
     const key = elevenKey()
     if (!key) {
@@ -1098,6 +982,18 @@ console.log(
   `[jarvis] writes ${ALLOW_WRITES ? 'ENABLED' : 'disabled'}` +
     (ALLOW_WRITES ? '' : ' — set JARVIS_ALLOW_WRITES=1 to permit shell/file/device actions'),
 )
+// Asynchronous, so it lands a beat after the rest of the banner. Worth printing
+// at all because an extension that is simply not running is indistinguishable
+// at the tool boundary from one that is broken, and this is the one place the
+// difference can be stated before anybody asks a question that depends on it.
+void chromeAvailable().then((ok) => {
+  console.log(
+    ok
+      ? `[jarvis] browser control ready${ALLOW_WRITES ? '' : ' (reading only — clicking and typing need JARVIS_ALLOW_WRITES=1)'}`
+      : '[jarvis] browser control unavailable — open Chrome with the Claude extension enabled',
+  )
+})
+
 console.log(
   '[jarvis] accepting local dev origins' +
     (EXTRA_ORIGINS.size ? ` plus ${[...EXTRA_ORIGINS].join(', ')}` : '') +
@@ -1205,12 +1101,19 @@ wss.on('connection', (socket) => {
       // connection rather than once.
       mcpServers: {
         ...MCP_SERVERS,
-        jarvis: displayServer((panel) => send({ type: 'panel', panel })),
+        jarvis: displayServer(
+          (panel) => send({ type: 'panel', panel }),
+          (blade) => send({ type: 'blade', blade }),
+        ),
         // The interface controls, on the same socket. A separate key because
         // MCP tool names are `mcp__<key>__<tool>` and one key can only carry
         // one server; the underscore in it is why decideTool and announceTool
         // both name `jarvis_ui` explicitly.
         jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
+        // The user's own Chrome, over the extension's native-host socket. It
+        // holds no per-connection state, but it is built here with the rest so
+        // the write gate is read once, at the same point as everything else.
+        jarvis_chrome: chromeServer({ allowWrites: ALLOW_WRITES }),
       },
       // A plain system prompt, not the claude_code preset. The preset is
       // tuned for a coding agent — verbose, file-oriented, and a large chunk

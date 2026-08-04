@@ -26,6 +26,32 @@ export type Panel = {
   hold: 'turn' | 'sticky'
 }
 
+/**
+ * A blade — the big surface.
+ *
+ * A panel is a card you glance at while listening. A blade is the thing you
+ * actually look at, and the difference is not decoration: an article you are
+ * meant to READ needs a column of a certain width and a height you can scroll,
+ * and no amount of styling makes that work inside a 320px card beside the
+ * reactor. So blades own their own geometry, stack rather than replace each
+ * other, and can be pulled forward or thrown full screen by the user.
+ */
+export type Blade = {
+  id: string
+  title: string
+  kind: 'article' | 'image' | 'gallery' | 'video' | 'embed' | 'markup'
+  /** article / image / video / embed. */
+  url?: string
+  /** gallery. */
+  images?: string[]
+  /** markup — sanitised exactly as a panel body is. */
+  html?: string
+  /** article only: the words restyled, or the real page. */
+  mode?: 'reader' | 'live'
+  size: 'compact' | 'tall' | 'wide' | 'full'
+  hold: 'turn' | 'sticky'
+}
+
 export type Turn = {
   id: string
   role: 'user' | 'jarvis'
@@ -200,6 +226,12 @@ type State = {
   bootNote: string
   /** Cards currently on the display, newest last. */
   panels: Panel[]
+  /** Blades currently open, newest last — which is also front-most. */
+  blades: Blade[]
+  /** The blade the user has pulled forward, or null for "the newest one". */
+  focusedBlade: string | null
+  /** A blade thrown to full screen, or null. */
+  expandedBlade: string | null
   /** JARVIS's control over his own appearance. UI_DEFAULTS == the stock look. */
   ui: UiState
 
@@ -207,6 +239,11 @@ type State = {
   setBootNote: (n: string) => void
   pushPanel: (p: Panel) => void
   clearPanels: () => void
+  pushBlade: (b: Blade) => void
+  closeBlade: (id: string) => void
+  clearBlades: () => void
+  focusBlade: (id: string | null) => void
+  expandBlade: (id: string | null) => void
   setPhase: (p: Phase) => void
   setLevel: (l: number) => void
   setCaption: (c: string) => void
@@ -235,6 +272,9 @@ export const useStore = create<State>((set) => ({
   connected: [],
   voice: '',
   panels: [],
+  blades: [],
+  focusedBlade: null,
+  expandedBlade: null,
   bootNote: '',
   ui: defaultUi(),
 
@@ -259,6 +299,41 @@ export const useStore = create<State>((set) => ({
   // user speaks again.
   clearPanels: () =>
     set((s) => ({ panels: s.panels.filter((p) => p.hold === 'sticky') })),
+
+  /**
+   * Six is the ceiling, and it is about the stack reading as a stack: past
+   * about six the ones at the back are a millimetre of edge each and the depth
+   * stops meaning anything. The oldest falls off, which is also the one the
+   * user has had longest to look at.
+   */
+  pushBlade: (blade) =>
+    set((s) => {
+      const next = [...s.blades.filter((b) => b.id !== blade.id), blade].slice(-6)
+      // A new blade comes to the front. Leaving the old focus in place would
+      // open something the user asked for and then hide it behind what they
+      // were looking at before.
+      return { blades: next, focusedBlade: blade.id }
+    }),
+  closeBlade: (id) =>
+    set((s) => ({
+      blades: s.blades.filter((b) => b.id !== id),
+      focusedBlade: s.focusedBlade === id ? null : s.focusedBlade,
+      expandedBlade: s.expandedBlade === id ? null : s.expandedBlade,
+    })),
+  // Same contract as panels: 'turn' blades go when the user speaks again,
+  // 'sticky' ones stay until something replaces them.
+  clearBlades: () =>
+    set((s) => {
+      const kept = s.blades.filter((b) => b.hold === 'sticky')
+      const alive = new Set(kept.map((b) => b.id))
+      return {
+        blades: kept,
+        focusedBlade: s.focusedBlade && alive.has(s.focusedBlade) ? s.focusedBlade : null,
+        expandedBlade: s.expandedBlade && alive.has(s.expandedBlade) ? s.expandedBlade : null,
+      }
+    }),
+  focusBlade: (focusedBlade) => set({ focusedBlade }),
+  expandBlade: (expandedBlade) => set({ expandedBlade }),
   setPhase: (phase) => set({ phase }),
   setLevel: (level) => set({ level }),
   setCaption: (caption) => set({ caption }),
@@ -317,9 +392,14 @@ export const useStore = create<State>((set) => ({
     set((s) => {
       const panels = what === 'transcript' ? s.panels : []
       const turns = what === 'panels' ? s.turns : []
+      // Blades clear with the panels. "Clear the screen" said out loud means the
+      // screen, and leaving a full-height article standing while the cards
+      // around it vanish is the interface arguing with the instruction.
+      const blades = what === 'transcript' ? s.blades : []
+      const cleared = { panels, turns, blades, focusedBlade: null, expandedBlade: null }
       return what === 'all'
-        ? { panels, turns, caption: '', activeTool: null }
-        : { panels, turns }
+        ? { ...cleared, caption: '', activeTool: null }
+        : cleared
     }),
 }))
 

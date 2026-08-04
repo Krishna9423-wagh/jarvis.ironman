@@ -63,9 +63,19 @@ const ECHO_TAIL_MS = 1800
  */
 export const diag = {
   engine: 'system' as 'system' | 'kokoro' | 'elevenlabs',
-  /** Utterances handed to the OS. */
+  /** Utterances handed to an engine — the OS voice or an audio element. */
   spoken: 0,
-  /** Of those, how many actually began producing sound. */
+  /**
+   * Of those, how many actually began producing sound.
+   *
+   * Counted for EVERY engine, which it did not used to be: this was incremented
+   * only in speakNative's onstart, so on the ElevenLabs path — the good path,
+   * the one a configured machine actually uses — it stayed at zero forever.
+   * The diagnostics panel reads this to decide whether he is audible at all, so
+   * a working cloud voice reported "no sound produced", and the T self-test
+   * raised that as an error on screen. The verdict has to be about sound, not
+   * about which code path produced it.
+   */
   started: 0,
   /** Genuine engine failures, excluding deliberate cancels. */
   failures: 0,
@@ -369,11 +379,19 @@ export function createSpeaker(): Speaker {
     // voice on any failure, so a student without a key still hears him speak.
     // `nativeBroken` latches on once the system voice has proved unusable.
     if (USE_ELEVENLABS || caps().tts || nativeBroken) {
+      // Recorded at the moment the tier is chosen rather than only when the
+      // native voice latches over. Without this the panel reported 'system'
+      // for a session that had spoken every one of its sentences through
+      // ElevenLabs, which makes the one field naming the engine useless
+      // exactly when you are trying to work out which engine is at fault.
+      diag.engine = 'elevenlabs'
       return fetchCloudAudio(text).catch(() => null)
     }
     if (TTS_ENGINE === 'kokoro' && !kokoro.isUnavailable()) {
+      diag.engine = 'kokoro'
       return kokoro.speak(text).catch(() => null)
     }
+    diag.engine = 'system'
     return null
   }
 
@@ -413,7 +431,7 @@ export function createSpeaker(): Speaker {
       if (cancelled) return
       // A failed generation is not a failed turn — drop to the system voice.
       if (url) {
-        await playUrl(url)
+        await playUrl(url, item.text)
         return
       }
 
@@ -434,7 +452,7 @@ export function createSpeaker(): Speaker {
       const rescue = await fetchCloudAudio(item.text).catch(() => null)
       if (rescue && !cancelled) {
         diag.rescued++
-        await playUrl(rescue)
+        await playUrl(rescue, item.text)
       }
     } finally {
       if (speaking === item.text) setSpeaking('')
@@ -563,10 +581,17 @@ export function createSpeaker(): Speaker {
       speechSynthesis.speak(u)
     })
 
-  const playUrl = (url: string) =>
+  const playUrl = (url: string, text: string) =>
     new Promise<void>((resolve) => {
       const audio = new Audio(url)
       currentAudio = audio
+      // The generated path is an engine speaking just as much as the OS voice
+      // is, so it keeps the same books. `spoken` counts the hand-off, `started`
+      // is only incremented once the element reports it is actually playing —
+      // see the onplaying handler below.
+      diag.spoken++
+      diag.lastText = text.slice(0, 60)
+      diag.voice = diag.engine === 'kokoro' ? KOKORO_VOICE : 'ElevenLabs'
 
       let read: (() => number) | null = null
       const ctx = outputContext()
@@ -605,13 +630,31 @@ export function createSpeaker(): Speaker {
         if (currentAudio === audio) currentAudio = null
         resolve()
       }
+      // Sound is genuinely coming out. This is the cloud/neural counterpart of
+      // SpeechSynthesisUtterance.onstart, and it is what makes the diagnostics
+      // verdict — and the T self-test — tell the truth on the premium path.
+      audio.onplaying = () => {
+        diag.started++
+        diag.lastError = ''
+      }
       audio.onended = finish
-      audio.onerror = finish
+      audio.onerror = () => {
+        // A decode or network failure on a blob we already hold is rare, but
+        // silent when it happens: the sentence simply never plays and the queue
+        // moves on. Count it rather than letting it look like nothing was said.
+        diag.failures++
+        diag.lastError = 'audio-element'
+        finish()
+      }
       // The one that matters for barge-in: cancel() pauses the element, and a
       // paused element never fires `ended`. Without this the promise never
       // settles and every await behind it hangs for the life of the page.
       audio.onpause = finish
-      void audio.play().catch(finish)
+      void audio.play().catch((err) => {
+        diag.failures++
+        diag.lastError = String((err as Error)?.name ?? 'play-rejected')
+        finish()
+      })
     })
 
   return {

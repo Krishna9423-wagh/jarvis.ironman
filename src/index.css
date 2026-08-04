@@ -1540,3 +1540,227 @@ kbd {
 .diag-v { color: #cfe6e3; overflow-wrap: anywhere; }
 .diag-ok { color: #3ef2a8; }
 .diag-bad { color: #ff6b6b; }
+
+/* ------------------------------------------------------------------ blades */
+/*
+   The blade stack — the surface for things meant to be looked at rather than
+   glanced at. Panels live down the sides in a fixed narrow column; blades take
+   the middle of the frame, because the whole point of them is that an article
+   needs a readable measure and a picture needs room.
+
+   The stack is centred rather than railed to one side. That does cover the
+   reactor, and it should: when there is something on screen worth reading, the
+   reactor is no longer the subject.
+*/
+.blades-stack {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  /* The container never eats clicks; only the cards inside it do, so the
+     reactor and the rails stay reachable around a small blade. */
+  pointer-events: none;
+}
+
+.bl {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--accent) 11%, rgba(4, 12, 18, 0.94)),
+    color-mix(in srgb, var(--accent) 4%, rgba(2, 8, 12, 0.96))
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.62),
+    0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent) inset;
+  transform-origin: center center;
+}
+
+/* Only the front blade gets the accent glow; the ones behind read as paper. */
+.bl-front {
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.7),
+    0 0 34px -10px color-mix(in srgb, var(--accent) 46%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent) inset;
+}
+
+/* Sizes are about how the content is meant to be consumed.
+   `tall` is a reading measure — roughly 60 characters at the body size in
+   page.mjs, which is the width prose is actually legible at. */
+.bl-compact { width: min(88vw, 360px);  height: min(52vh, 300px) }
+.bl-tall    { width: min(92vw, 560px);  height: min(82vh, 900px) }
+.bl-wide    { width: min(88vw, 1080px); height: min(72vh, 720px) }
+.bl-full    { width: 92vw;              height: 88vh }
+.bl-expanded { width: 94vw; height: 92vh }
+
+.bl-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px 9px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.bl-title {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: color-mix(in srgb, var(--accent) 92%, white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bl-kind {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  opacity: 0.45;
+  margin-right: auto;
+}
+
+.bl-acts { display: flex; gap: 4px }
+
+.bl-btn {
+  pointer-events: auto;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 80%, white);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.bl-btn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+}
+
+.bl-body {
+  flex: 1 1 auto;
+  min-height: 0;      /* or the iframe refuses to shrink inside the flex column */
+  overflow: auto;
+  position: relative;
+}
+
+/* A framed document fills the blade. It carries its own scrollbar, its own
+   stylesheet and its own CSP — see bridge/page.mjs. */
+.bl-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: dark;
+}
+
+.bl-image,
+.bl-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* contain, not cover: this is the thing being looked at, and cropping the
+     subject out of a photograph to fill a rectangle is the wrong trade. */
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.bl-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+.bl-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.bl-markup { padding: 14px 16px; text-transform: none; letter-spacing: normal }
+
+.bl-note {
+  padding: 22px;
+  opacity: 0.6;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
+}
+
+.bl-hint {
+  position: absolute;
+  bottom: 3.2vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  opacity: 0.42;
+  pointer-events: none;
+}
+.bl-hint kbd {
+  font: inherit;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  padding: 1px 4px;
+}
+
+/* The body scrollbar inside a blade, matched to the reader view's own. */
+.bl-body::-webkit-scrollbar { width: 9px }
+.bl-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl { transition: none }
+}
+
+/* The slot carries the depth transform; the blade inside it carries the drag.
+   Both need a transform, and one element cannot serve two owners. */
+.bl-slot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.bl-slot > .bl { pointer-events: auto }
+
+/* Dragged by the header, so the body stays selectable. */
+.bl-head { cursor: grab; user-select: none }
+.bl-head:active { cursor: grabbing }
+.bl-btn { cursor: pointer }
+
+.bl-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  /* Two hairlines, the usual visual shorthand for a resize corner. */
+  background:
+    linear-gradient(135deg, transparent 0 46%,
+      color-mix(in srgb, var(--accent) 60%, transparent) 46% 54%, transparent 54%),
+    linear-gradient(135deg, transparent 0 68%,
+      color-mix(in srgb, var(--accent) 40%, transparent) 68% 76%, transparent 76%);
+  opacity: 0.55;
+  touch-action: none;
+  z-index: 2;
+}
+.bl-grip:hover { opacity: 1 }
+
+/* A resized blade is sized inline, so the presets must not fight it. */
+.bl[style*="width"] { max-width: none; max-height: none }

@@ -1,5 +1,5 @@
 import type { AskHandlers } from './anthropic'
-import type { Panel } from '../store'
+import type { Blade, Panel } from '../store'
 import { BRIDGE_WS_URL } from '../config'
 
 /**
@@ -25,6 +25,7 @@ type Frame = {
   text?: string
   message?: string
   panel?: Panel
+  blade?: Blade
   op?: string
   args?: unknown
   servers?: Array<string | { name?: string }>
@@ -49,6 +50,13 @@ export function watchServers(fn: (s: string[]) => void) {
 let onPanel: ((panel: Panel) => void) | null = null
 export function watchPanels(fn: (panel: Panel) => void) {
   onPanel = fn
+}
+
+/** Blades arrive the same way panels do — pushed mid-turn, so the article is
+ *  already open as he starts the sentence about it. */
+let onBlade: ((blade: Blade) => void) | null = null
+export function watchBlades(fn: (blade: Blade) => void) {
+  onBlade = fn
 }
 
 /** Commands that redress the interface — theme, reactor, orbits, effects. Same
@@ -140,6 +148,8 @@ function dispatch(ws: WebSocket) {
       firstReady.resolve()
     } else if (msg.type === 'panel' && msg.panel) {
       onPanel?.(msg.panel)
+    } else if (msg.type === 'blade' && msg.blade) {
+      onBlade?.(msg.blade)
     } else if (msg.type === 'ui' && msg.op) {
       // A `ui` frame with no args is normal — reset and clear take none — so an
       // absent args object is an empty one, not a reason to drop the command.
@@ -187,7 +197,27 @@ function connect(): Promise<WebSocket> {
       everConnected = true
     }
     ws.onerror = () => {
-      settle(new Error('Cannot reach the bridge — start it with `npm run bridge`.'))
+      /**
+       * The browser will not tell us why.
+       *
+       * A refused handshake and a rejected Origin arrive here identically — no
+       * status, no reason, just `error` — and the two have completely different
+       * fixes. The old message named only one of them, and confidently: it said
+       * to start the bridge. When the real cause was the page being served on a
+       * port outside the range the bridge trusts, that advice sent everyone to
+       * inspect a process that was running perfectly the whole time.
+       *
+       * So say both, and put the actual port in front of them, since that is
+       * the fact that distinguishes the two cases at a glance.
+       */
+      settle(
+        new Error(
+          `Cannot reach the bridge at ${BRIDGE_WS_URL}. Either it is not ` +
+            'running (start it with `npm start`), or this page is on a port it ' +
+            `refuses — it accepts localhost:5173-5199 and 4173-4199, and this ` +
+            `page is on ${location.port || '80'}.`,
+        ),
+      )
     }
     ws.onclose = () => {
       // A close before open is just a failed dial; after open it's a lost

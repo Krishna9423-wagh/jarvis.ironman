@@ -1,5 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
+import { probeUrl } from './page.mjs'
 
 /**
  * The `display` tool — JARVIS's screen.
@@ -212,10 +213,107 @@ ${DESIGN_SYSTEM}`
  */
 let seq = 0
 
+// ---------------------------------------------------------------------------
+// Blades
+// ---------------------------------------------------------------------------
+
+const BLADE_DESCRIPTION = `Open something on the blades — the big surface.
+
+A panel is a card you glance at. A blade is a thing you LOOK at: a photograph
+worth seeing properly, an article worth reading, a video worth watching. Blades
+stack, the newest in front, and the user can pull an older one forward or throw
+one to full screen. Use a blade whenever the content deserves the frame, and a
+panel when it deserves a line.
+
+Choosing what to open:
+  article — a web page. \`mode: "reader"\` strips it to the words and restyles
+            them into this interface: always legible, ignores whether the site
+            allows being embedded. \`mode: "live"\` shows the real page, which is
+            right when the layout carries meaning — a dashboard, a profile, a
+            table, a chart. Both are fetched by the bridge and served locally,
+            so sites that block embedding still open.
+  image   — one picture, full width of the blade.
+  gallery — several pictures at once. This is the answer to an image search.
+  video   — a direct .mp4/.webm file.
+  embed   — a YouTube or Vimeo watch URL. It is turned into a player.
+  markup  — your own composed HTML, in the same .hud-* system the display tool
+            uses, when none of the above is the shape of the answer.
+
+Size is about reading, not decoration. \`tall\` is a reading column — use it for
+any article the user intends to actually read. \`wide\` suits images, video and
+tables. \`full\` takes the screen and should be reserved for the moment the
+content IS the answer. \`compact\` is a thumbnail that stays out of the way.
+
+Call \`probe_url\` first when you are not certain what a URL is. Do not guess
+from the file extension — image CDNs routinely serve pictures from URLs with no
+extension, and a link that looks like a video is usually a page about one.
+
+Never open a blade the user did not ask for and does not need. One blade that
+answers the question beats three that surround it.`
+
+const bladeSchema = {
+  title: z
+    .string()
+    .describe('Two to four words naming what this is, e.g. "REUTERS" or "MARK VII".'),
+  kind: z
+    .enum(['article', 'image', 'gallery', 'video', 'embed', 'markup'])
+    .describe('What is being opened. See the tool description.'),
+  url: z
+    .string()
+    .optional()
+    .catch(undefined)
+    .describe(
+      'The address, for article / image / video / embed. Use a URL that ' +
+        'appeared verbatim in a tool result — never one you assembled yourself.',
+    ),
+  images: z
+    .array(z.string())
+    .optional()
+    .catch(undefined)
+    .describe('Image URLs, for kind "gallery". Four is a good number, eight the most.'),
+  html: z
+    .string()
+    .optional()
+    .catch(undefined)
+    .describe('Your own markup, for kind "markup", in the .hud-* design system.'),
+  mode: z
+    .enum(['reader', 'live'])
+    .optional()
+    .catch(undefined)
+    .describe('For kind "article": reader = the words restyled, live = the real page.'),
+  size: z
+    .enum(['compact', 'tall', 'wide', 'full'])
+    .optional()
+    .catch(undefined)
+    .describe('tall = a reading column. wide = pictures and tables. full = the screen.'),
+  hold: z
+    .enum(['turn', 'sticky'])
+    .optional()
+    .catch(undefined)
+    .describe('turn = closes when the user next speaks. sticky = stays until replaced.'),
+}
+
+const PROBE_DESCRIPTION = `Find out what is actually at a URL before showing it.
+
+Returns what it is, whether it can be reached at all, and — for a web page —
+its title, how much readable prose it holds, and a lead image if it has one.
+
+Worth calling whenever you are about to put something on screen and are not
+certain of it. The failure this avoids is the visible kind: a blade that opens
+onto a blank rectangle because the link was a consent wall, or an image that
+turns out to be an HTML page, in front of the user, while you describe it as
+though it worked.
+
+It reports a \`suggestion\`. That is advice from something that has only seen
+the bytes — it does not know whether the user asked to read this or merely to
+see it, what is already on screen, or whether the point was the picture or the
+argument. You know those things. Overrule it whenever you have reason to.`
+
 /**
  * @param {(panel: object) => void} emit - pushes the panel to the browser
+ * @param {(blade: object) => void} emitBlade - pushes a blade to the browser
  */
-export function displayServer(emit) {
+export function displayServer(emit, emitBlade) {
   return createSdkMcpServer({
     name: 'jarvis',
     version: '1.0.0',
@@ -260,6 +358,54 @@ export function displayServer(emit) {
         // into narrating what it already showed.
         return { content: [{ type: 'text', text: 'On screen.' }] }
       }),
+
+      tool('blade', BLADE_DESCRIPTION, bladeSchema, async (args) => {
+        const kind = args.kind
+        const url = String(args.url ?? '').trim()
+        const images = Array.isArray(args.images) ? args.images.filter(Boolean) : []
+
+        // Refused rather than emitted, for the same reason the display tool
+        // refuses an empty body: a blade that opens onto nothing looks like the
+        // interface failing, and the model gets no signal to try again.
+        if (kind === 'gallery' && !images.length) {
+          return refuse('Not opened: a gallery needs at least one image URL in `images`.')
+        }
+        if (kind === 'markup' && !String(args.html ?? '').trim()) {
+          return refuse('Not opened: kind "markup" needs an `html` body.')
+        }
+        if (['article', 'image', 'video', 'embed'].includes(kind) && !url) {
+          return refuse(`Not opened: kind "${kind}" needs a \`url\`.`)
+        }
+
+        const blade = {
+          id: `b${Date.now().toString(36)}-${(seq++).toString(36)}`,
+          title: String(args.title ?? '').trim() || 'DISPLAY',
+          kind,
+          url: url || undefined,
+          images: images.length ? images.slice(0, 8) : undefined,
+          html: args.html || undefined,
+          mode: args.mode ?? 'reader',
+          // A reading column for anything meant to be read, a broad frame for
+          // anything meant to be looked at. Getting this wrong is the difference
+          // between an article you can follow and one in a letterbox.
+          size: args.size ?? (kind === 'article' ? 'tall' : 'wide'),
+          hold: args.hold ?? 'turn',
+        }
+        emitBlade(blade)
+        return { content: [{ type: 'text', text: `Open on the blades as "${blade.title}".` }] }
+      }),
+
+      tool(
+        'probe_url',
+        PROBE_DESCRIPTION,
+        { url: z.string().describe('The absolute URL to inspect.') },
+        async (args) => {
+          const report = await probeUrl(String(args.url ?? ''))
+          return { content: [{ type: 'text', text: JSON.stringify(report, null, 1) }] }
+        },
+      ),
     ],
   })
 }
+
+const refuse = (text) => ({ isError: true, content: [{ type: 'text', text }] })

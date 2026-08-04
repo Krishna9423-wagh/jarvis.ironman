@@ -18,6 +18,7 @@ import {
   interrupt,
   watchServers,
   watchPanels,
+  watchBlades,
   watchUi,
   watchConnection,
   connectedLabels,
@@ -123,9 +124,10 @@ export default function App() {
 
     clearIdle()
     const s = store.getState()
-    // Last turn's panels go now, before the new answer starts putting its own
-    // up. Anything the model marked sticky survives.
+    // Last turn's panels and blades go now, before the new answer starts
+    // putting its own up. Anything the model marked sticky survives.
     s.clearPanels()
+    s.clearBlades()
     s.setCaption('')
     s.pushTurn({ id: newId(), role: 'user', text: said })
     s.setPhase('thinking')
@@ -356,6 +358,7 @@ export default function App() {
 
     watchServers((servers) => store.getState().setConnected(servers))
     watchPanels((panel) => store.getState().pushPanel(panel))
+    watchBlades((blade) => store.getState().pushBlade(blade))
 
     // The interface is JARVIS's to drive. These arrive out of band, pushed
     // mid-turn the way panels are, so a command can retint the reactor or put

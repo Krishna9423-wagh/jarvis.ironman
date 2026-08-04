@@ -2,7 +2,7 @@ import { BACKEND } from '../config'
 import * as direct from './anthropic'
 import * as bridge from './bridge'
 import type { AskHandlers, Msg } from './anthropic'
-import type { Panel } from '../store'
+import type { Blade, Panel } from '../store'
 
 export type { AskHandlers, Msg }
 export type { ConnectionState } from './bridge'
@@ -47,6 +47,13 @@ export function watchServers(fn: (servers: string[]) => void): void {
 /** HUD panels are pushed mid-turn by the `display` tool, not returned by ask(). */
 export function watchPanels(fn: (panel: Panel) => void): void {
   if (usingBridge) bridge.watchPanels(fn)
+}
+
+/** Blades — the big surface — arrive the same way, from the `blade` tool. Like
+ *  panels and the ui_* commands, this is a bridge capability: the direct path
+ *  has no channel for a server to volunteer anything mid-turn. */
+export function watchBlades(fn: (blade: Blade) => void): void {
+  if (usingBridge) bridge.watchBlades(fn)
 }
 
 /**

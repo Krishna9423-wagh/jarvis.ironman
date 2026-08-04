@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore, accentFor, type Phase } from '../store'
 import { Suggestions } from './Suggestions'
 import { Panels } from './Panels'
-import { Blades } from './Blades'
+import { BladeSweep, Blades } from './Blades'
 import { Effects } from './Effects'
 
 const statusText: Record<Phase, string> = {
@@ -175,9 +175,9 @@ export function Hud() {
   return (
     <div className="hud" style={{ ['--accent' as string]: colour }}>
       {/* First in the tree on purpose. Everything after it is positioned with
-          `z-index: auto`, so paint order is document order and the blades stay
+          `z-index: auto`, so paint order is document order and the sweep stays
           behind the transcript and the panels without a z-index war. */}
-      <Blades />
+      <BladeSweep />
 
       <Corner at="tl" />
       <Corner at="tr" />
@@ -297,6 +297,11 @@ export function Hud() {
       </AnimatePresence>
 
       <Panels />
+
+      {/* After the panels, so a blade sits in front of the cards rather than
+          behind them — it is the thing being looked at, and the cards are the
+          glanceable readout beside it. */}
+      <Blades />
 
       {ui.chrome.suggestions && <Suggestions />}
 
