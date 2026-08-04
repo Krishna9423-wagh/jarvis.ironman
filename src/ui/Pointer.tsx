@@ -192,7 +192,11 @@ export function Pointer() {
           ctx.fillStyle = accent
           ctx.font = `500 ${Math.round(9 * Math.min(scale, 1.4))}px ui-monospace, monospace`
           ctx.textAlign = 'center'
-          ctx.fillText(hand.gesture.toUpperCase(), p[WRIST].x, p[WRIST].y + 22 * scale)
+          // Which hand, and what it is doing. Naming the hand matters once
+          // there are two of them: it is the only way to tell at a glance
+          // which cursor is yours to move.
+          const tag = `${hand.handedness === 'right' ? 'RIGHT' : 'LEFT'} · ${hand.gesture.toUpperCase()}`
+          ctx.fillText(tag, p[WRIST].x, p[WRIST].y + 22 * scale)
         }
       }
 
