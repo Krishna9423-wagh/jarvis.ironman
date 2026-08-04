@@ -6,6 +6,7 @@ import { Panels } from './Panels'
 import { BladeSweep, Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
+import { GestureGuide } from './GestureGuide'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -330,6 +331,7 @@ export function Hud() {
           a press that lands under a flourish is a press you cannot aim. */}
       <Pointer />
       {gestures && <div className="hands-live">CAMERA ON · G TO STOP</div>}
+      <GestureGuide live={gestures} />
     </div>
   )
 }

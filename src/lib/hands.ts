@@ -1,113 +1,178 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
+import { OneEuroPoint } from './oneEuro'
 
 /**
  * Hands.
  *
- * A reticle follows your index finger; pinching your thumb and finger together
- * presses. That is the whole interaction, and it is deliberately that small —
- * a gesture vocabulary you have to remember is a worse interface than a mouse,
- * and this one has exactly two words in it: where, and press.
+ * Your hand appears on screen as a skeleton — every joint, every finger — and
+ * the tip of your index finger is the cursor. Pinch thumb to finger to press.
  *
- * The important decision here is architectural rather than gestural. Nothing in
- * this file knows what a blade is. It does not know about dragging, resizing,
- * closing, or the header bar you drag by. It converts a hand into a position
- * and a press, and then dispatches ordinary PointerEvents at that position —
- * so every interaction the mouse already has works with the hand for free, and
- * anything added later works without being taught about hands. The alternative,
- * a gesture layer that hit-tests blades and calls their actions directly, is
- * the same code written twice and left to drift.
+ * Drawing the whole hand rather than a floating dot is not decoration. You
+ * cannot see your own hand against the screen, so with only a dot you are
+ * aiming something whose orientation and shape you have to infer. With the
+ * skeleton you can see the pinch closing before it fires, see which finger the
+ * cursor is riding on, and see immediately when tracking has lost you rather
+ * than wondering why nothing responds.
  *
- * Two consequences worth naming:
+ * The architectural decision is that nothing here knows what a blade is. No
+ * hit-testing of blades, no calls to close or move them, no knowledge of the
+ * header you drag by. It turns a hand into a position and a press and
+ * dispatches ordinary PointerEvents there — so every interaction the mouse
+ * already has works with a hand for free, and anything added later works
+ * without being taught that hands exist.
  *
- *   - The camera is off until you ask for it. An always-on webcam for an
- *     interface you use occasionally is a bad trade, and a visible indicator
- *     is the minimum honesty when one is running.
- *   - Nothing leaves the machine. The model runs locally on the GPU; frames are
- *     read and discarded, never uploaded, never recorded.
+ * The camera is off until you ask for it, says so on screen the whole time it
+ * is on, and nothing leaves the machine: the model runs locally on the GPU and
+ * frames are read and discarded.
  */
 
 /**
  * Served from our own origin, copied out of node_modules by scripts/start.mjs.
  *
- * Not a CDN, for two reasons that both bite. The runtime arrives as a script,
+ * Not a CDN, for two reasons that both bite. The runtime arrives as a script
  * and the page's CSP names no CDN in `script-src` — so a CDN path is simply
  * blocked, and the symptom is gesture control that never starts with nothing
  * obviously wrong. And a CDN import is a live supply-chain dependency:
  * executable code, re-resolved every load, that we neither control nor can pin
- * against being changed underneath us. Local is the exact bytes of the version
- * in the lockfile.
+ * against being changed underneath us.
  */
 const WASM_BASE = '/mediapipe'
+
 /**
  * The weights stay remote, and that is a different call from the runtime above.
- *
  * This is data, not code: it is fetched, so `connect-src` governs it rather
- * than `script-src`, and nothing in it executes. Seven megabytes is also not
- * worth vendoring for a feature most people will never turn on — the browser
- * caches it after the first use, exactly as the neural voice model is handled.
+ * than `script-src`, and nothing in it executes. The browser caches it after
+ * first use, exactly as the neural voice model is handled.
  */
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
-/** MediaPipe's landmark indices, named so the geometry below reads as intent. */
-const WRIST = 0
-const THUMB_TIP = 4
-const INDEX_TIP = 8
+/* ------------------------------------------------------------------ anatomy */
+
+export const WRIST = 0
+const THUMB_MCP = 2
+export const THUMB_TIP = 4
+const INDEX_PIP = 6
+export const INDEX_TIP = 8
 const MIDDLE_MCP = 9
+const MIDDLE_PIP = 10
+const MIDDLE_TIP = 12
+const RING_PIP = 14
+const RING_TIP = 16
+const PINKY_PIP = 18
+const PINKY_TIP = 20
+
+/**
+ * The skeleton, as pairs of landmark indices.
+ *
+ * Written out rather than taken from HandLandmarker.HAND_CONNECTIONS so the
+ * renderer does not depend on a static that the library is free to reshape, and
+ * so the palm arch below reads as a deliberate choice.
+ */
+export const BONES: readonly [number, number][] = [
+  // thumb
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  // index
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  // middle
+  [9, 10], [10, 11], [11, 12],
+  // ring
+  [13, 14], [14, 15], [15, 16],
+  // pinky
+  [0, 17], [17, 18], [18, 19], [19, 20],
+  // the arch across the knuckles, which is what makes it read as a hand
+  // rather than as five separate sticks
+  [5, 9], [9, 13], [13, 17],
+]
+
+export const TIPS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP]
+
+/* -------------------------------------------------------------------- tuning */
+
+/**
+ * 1€ filter constants, tuned by the published method: beta at zero, drop
+ * minCutoff until a resting hand stops shivering, then raise beta until a fast
+ * movement stops trailing.
+ *
+ * The cursor is filtered harder than the skeleton. Aiming is a precision task
+ * and benefits from every bit of steadiness; the skeleton is a picture of your
+ * hand and only has to look alive, so it is allowed to be looser and more
+ * responsive. Filtering both identically made the drawing feel dead.
+ */
+const CURSOR_MIN_CUTOFF = 1.1
+const CURSOR_BETA = 0.012
+const SKELETON_MIN_CUTOFF = 2.4
+const SKELETON_BETA = 0.02
 
 /**
  * Pinch thresholds, as a fraction of hand span rather than an absolute.
  *
- * The raw distance between two fingertips is meaningless on its own: it halves
- * when you lean back and doubles when you lean in, so a fixed threshold means
- * the interface works at one distance from the camera. Dividing by the span
- * from wrist to middle knuckle — a length that scales with the same
- * perspective — makes it a property of the hand's shape instead of its
+ * The raw gap between two fingertips is meaningless alone: it halves when you
+ * lean back and doubles when you lean in, so a fixed threshold means the
+ * interface only works at one distance from the camera. Dividing by the span
+ * from wrist to middle knuckle — a length that shrinks with the same
+ * perspective — makes it a property of the hand's shape rather than its
  * distance, which is what a pinch actually is.
  *
- * Two thresholds, not one. A single threshold flickers on the boundary, and a
- * press that stutters is worse than one that is slightly late.
+ * Two thresholds, not one: it takes a tighter pinch to start a press than to
+ * keep one, so the press cannot flicker on the boundary.
  */
-const PINCH_ON = 0.42
-const PINCH_OFF = 0.62
+const PINCH_ON = 0.40
+const PINCH_OFF = 0.60
+
+/** A finger counts as extended when its tip is this much further from the
+ *  wrist than its middle joint. Ratio rather than a y-comparison, so it still
+ *  works with your hand rotated or upside down. */
+const EXTEND_RATIO = 1.12
 
 /**
- * How hard the position is smoothed. Hand tracking is jittery at rest — a still
- * finger moves several pixels a frame — and an unsmoothed reticle is unusable
- * for anything small. Higher is steadier and laggier.
+ * A gesture must hold for this long before it counts.
+ *
+ * Fingers pass through other shapes on the way to the one you meant — a fist
+ * becomes a point by way of several ambiguous frames — and acting on those
+ * intermediate readings is what makes gesture interfaces feel possessed.
  */
-const SMOOTH = 0.35
+const GESTURE_HOLD_MS = 120
 
-/** Below this the hand is not confidently present; drop the reticle. */
-const MIN_VISIBLE = 0.5
+/** Below this many pixels of travel, a press was a click rather than a drag. */
+const CLICK_SLOP = 20
 
-export type HandPointer = {
+export type Gesture = 'point' | 'pinch' | 'open' | 'fist' | 'peace' | 'none'
+
+export type Hand = {
   id: number
-  /** Viewport pixels. */
+  /** Every joint, in viewport pixels, smoothed and mirrored. */
+  points: { x: number; y: number }[]
+  /** Cursor position — the index tip, or the pinch point while pinching. */
   x: number
   y: number
   pinched: boolean
-  /** 0..1, how closed the pinch is — drives the reticle's tightening ring. */
+  /** 0..1, how closed the pinch is. Drives the reticle's tightening ring. */
   closeness: number
+  gesture: Gesture
+  fingers: { thumb: boolean; index: boolean; middle: boolean; ring: boolean; pinky: boolean }
   handedness: string
+  /** Rough hand size in pixels, so the renderer can scale line weight to it. */
+  span: number
 }
 
 /**
- * Live pointers, mutated in place.
+ * Live hands, mutated in place.
  *
- * Deliberately not React state. This updates at camera rate and is read by a
- * component that positions two elements with a transform; routing it through
- * the store would re-render the entire HUD sixty times a second to move a
- * circle. The same reasoning as the scene's Drive object.
+ * Deliberately not React state. This updates at camera rate and is consumed by
+ * a canvas that redraws itself; routing it through the store would re-render
+ * the entire HUD sixty times a second to move some lines. Same reasoning as the
+ * scene's Drive object.
  */
-export const pointers: HandPointer[] = []
+export const hands: Hand[] = []
 
 export const diag = {
   enabled: false,
   loading: false,
   ready: false,
-  hands: 0,
+  count: 0,
   fps: 0,
+  gesture: '' as string,
   lastError: '',
 }
 
@@ -119,10 +184,36 @@ let landmarker: HandLandmarker | null = null
 let video: HTMLVideoElement | null = null
 let stream: MediaStream | null = null
 let running = false
+/** Bumped on every enable, so a loop from a previous session stops itself. */
+let generation = 0
 let frames = 0
 let fpsAt = 0
+/** detectForVideo rejects a timestamp that does not advance, and performance.now()
+ *  restarts its relationship with the model on every enable. Keep our own. */
+let stamp = 0
 
-/* -------------------------------------------------------------- synthetics */
+/* ------------------------------------------------------------------ filters */
+
+type Filters = {
+  cursor: OneEuroPoint
+  joints: OneEuroPoint[]
+}
+
+const filters = new Map<number, Filters>()
+
+function filtersFor(id: number): Filters {
+  let f = filters.get(id)
+  if (!f) {
+    f = {
+      cursor: new OneEuroPoint(CURSOR_MIN_CUTOFF, CURSOR_BETA),
+      joints: Array.from({ length: 21 }, () => new OneEuroPoint(SKELETON_MIN_CUTOFF, SKELETON_BETA)),
+    }
+    filters.set(id, f)
+  }
+  return f
+}
+
+/* ---------------------------------------------------------------- synthetics */
 
 /**
  * setPointerCapture, made safe for pointers that do not exist.
@@ -130,14 +221,13 @@ let fpsAt = 0
  * A synthetic PointerEvent carries a pointerId the browser has never issued, so
  * any element that calls setPointerCapture with it throws NotFoundError and the
  * interaction dies at the first move. That call is made by framer-motion's drag
- * and by our own resize grip — both of which we very much want the hand to be
+ * and by our own resize grip — both of which we very much want a hand to be
  * able to use — and neither is somewhere we can add a try/catch.
  *
  * Capture is an optimisation, not a requirement: it exists so a drag keeps
- * receiving events after the cursor leaves the element. Our synthetic events
- * are dispatched by hit-testing every frame, so they land on the right element
- * whether or not capture was granted. Swallowing the failure costs nothing and
- * is what makes every existing mouse interaction work with a hand, unmodified.
+ * receiving events after the cursor leaves the element. Our events are aimed by
+ * hit-testing every frame and routed to the element that took the press, so
+ * they land correctly whether or not capture was granted.
  */
 let patched = false
 function patchPointerCapture() {
@@ -161,106 +251,162 @@ function patchPointerCapture() {
   }
 }
 
-/** The element a pointer is over, ignoring the reticle itself. */
-function targetAt(x: number, y: number): Element | null {
-  return document.elementFromPoint(x, y)
-}
-
-type Synth = {
-  /** Where the press began, so a press and its release agree on their target. */
+type Press = {
+  /** What took the press, so the release and any click agree on their target. */
   captured: Element | null
   wasPinched: boolean
-  lastX: number
-  lastY: number
+  /** Where the press began — for telling a click from a drag. */
+  downX: number
+  downY: number
 }
 
-const synth = new Map<number, Synth>()
+const presses = new Map<number, Press>()
 
-function fire(el: Element | null, type: string, p: HandPointer, extra: PointerEventInit = {}) {
+function fire(el: Element | null, type: string, h: Hand, pressed: boolean) {
   if (!el) return
   el.dispatchEvent(
     new PointerEvent(type, {
       bubbles: true,
       cancelable: true,
       composed: true,
-      clientX: p.x,
-      clientY: p.y,
-      // Offset by a wide margin from any real pointer id the browser might use.
-      pointerId: 9000 + p.id,
+      clientX: h.x,
+      clientY: h.y,
+      // Well clear of any id the browser might issue for a real pointer.
+      pointerId: 9000 + h.id,
       pointerType: 'touch',
-      isPrimary: p.id === 0,
+      isPrimary: h.id === 0,
       button: 0,
-      buttons: p.pinched ? 1 : 0,
-      ...extra,
+      buttons: pressed ? 1 : 0,
+      width: 1,
+      height: 1,
+      pressure: pressed ? 0.5 : 0,
     }),
   )
 }
 
-/**
- * Turn a pointer's frame into events.
- *
- * Ordinary pointerdown / pointermove / pointerup, plus the click that a real
- * press would synthesise, so a button responds to a pinch exactly as it does
- * to a tap.
- */
-function emit(p: HandPointer) {
-  let s = synth.get(p.id)
-  if (!s) {
-    s = { captured: null, wasPinched: false, lastX: p.x, lastY: p.y }
-    synth.set(p.id, s)
+function emit(h: Hand) {
+  let p = presses.get(h.id)
+  if (!p) {
+    p = { captured: null, wasPinched: false, downX: h.x, downY: h.y }
+    presses.set(h.id, p)
   }
 
-  const over = targetAt(p.x, p.y)
+  const over = document.elementFromPoint(h.x, h.y)
 
-  if (p.pinched && !s.wasPinched) {
-    s.captured = over
-    fire(over, 'pointerdown', p)
-  } else if (!p.pinched && s.wasPinched) {
-    fire(s.captured ?? over, 'pointerup', p)
-    // Only a press that ends roughly where it began is a click; one that
-    // travelled was a drag, and a drag that also clicks would close the very
-    // blade it was moving.
-    const travelled = Math.hypot(p.x - s.lastX, p.y - s.lastY)
-    if (s.captured && travelled < 18 && s.captured === over) {
-      over?.dispatchEvent(
-        new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y }),
+  if (h.pinched && !p.wasPinched) {
+    // Press. Record where it began BEFORE anything moves, which is what makes
+    // the click-versus-drag test below mean anything.
+    p.captured = over
+    p.downX = h.x
+    p.downY = h.y
+    fire(over, 'pointerdown', h, true)
+  } else if (!h.pinched && p.wasPinched) {
+    const target = p.captured ?? over
+    fire(target, 'pointerup', h, false)
+    // Only a press that ends roughly where it began is a click. One that
+    // travelled was a drag, and a drag that also clicked would close the very
+    // blade it had just finished moving.
+    const travelled = Math.hypot(h.x - p.downX, h.y - p.downY)
+    if (target && travelled < CLICK_SLOP && target === over) {
+      target.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: h.x,
+          clientY: h.y,
+        }),
       )
     }
-    s.captured = null
+    p.captured = null
   } else {
-    // Moves go to whatever holds the press, so a drag survives the reticle
-    // sliding off the header it grabbed.
-    fire(p.pinched ? (s.captured ?? over) : over, 'pointermove', p)
+    // While pressed, moves go to whatever took the press, so a drag survives
+    // the cursor sliding off the header it grabbed.
+    fire(h.pinched ? (p.captured ?? over) : over, 'pointermove', h, h.pinched)
   }
 
-  if (!s.wasPinched && p.pinched) {
-    s.lastX = p.x
-    s.lastY = p.y
-  }
-  s.wasPinched = p.pinched
+  p.wasPinched = h.pinched
 }
 
-/** A press that is still held when tracking drops has to be let go, or the
- *  thing being dragged stays stuck to a hand that is no longer there. */
-function releaseAll() {
-  for (const [id, s] of synth) {
-    if (!s.wasPinched) continue
-    const ghost: HandPointer = {
-      id,
-      x: s.lastX,
-      y: s.lastY,
-      pinched: false,
-      closeness: 0,
-      handedness: '',
-    }
-    fire(s.captured, 'pointerup', ghost)
-    fire(s.captured, 'pointercancel', ghost)
-    s.wasPinched = false
-    s.captured = null
-  }
+/** Let go of anything still held. A press that outlives its hand leaves
+ *  whatever was being dragged stuck to a cursor that no longer exists. */
+function releasePress(id: number, at: { x: number; y: number }) {
+  const p = presses.get(id)
+  if (!p?.wasPinched) return
+  const ghost = { id, x: at.x, y: at.y } as Hand
+  fire(p.captured, 'pointerup', ghost, false)
+  fire(p.captured, 'pointercancel', ghost, false)
+  p.wasPinched = false
+  p.captured = null
 }
 
-/* ------------------------------------------------------------------ camera */
+/* ------------------------------------------------------------------ geometry */
+
+const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.hypot(a.x - b.x, a.y - b.y)
+
+/**
+ * Is this finger extended?
+ *
+ * Compared as distance from the wrist rather than by which landmark is higher
+ * on screen. The y-comparison is the common recipe and it is wrong the moment
+ * the hand is not upright: turn your hand sideways and every finger reads as
+ * curled. Distance from the wrist is rotation-invariant, which is the property
+ * the question actually needs.
+ */
+function isExtended(
+  marks: { x: number; y: number }[],
+  tip: number,
+  pip: number,
+): boolean {
+  const wrist = marks[WRIST]
+  return dist(marks[tip], wrist) > dist(marks[pip], wrist) * EXTEND_RATIO
+}
+
+/**
+ * Only report a finger pose once it has held.
+ *
+ * Fingers pass through other shapes on the way to the one you meant: a fist
+ * opening into a point spends several frames looking like a pinch, and a hand
+ * relaxing looks briefly like every gesture in the list. Acting on those
+ * intermediate readings is exactly what makes gesture interfaces feel
+ * possessed, so a pose has to survive GESTURE_HOLD_MS before it is believed.
+ *
+ * A pinch is deliberately exempt. It already carries its own hysteresis, and
+ * it is the one gesture where the delay would be felt directly — as a press
+ * that lands late.
+ */
+const settling = new Map<number, { raw: Gesture; since: number; held: Gesture }>()
+
+function stableGesture(id: number, raw: Gesture, now: number): Gesture {
+  if (raw === 'pinch') {
+    settling.set(id, { raw, since: now, held: raw })
+    return raw
+  }
+  const s = settling.get(id)
+  if (!s || s.raw !== raw) {
+    settling.set(id, { raw, since: now, held: s?.held === 'pinch' ? 'none' : (s?.held ?? 'none') })
+    return settling.get(id)!.held
+  }
+  if (now - s.since >= GESTURE_HOLD_MS) s.held = raw
+  return s.held
+}
+
+function classify(
+  fingers: Hand['fingers'],
+  pinched: boolean,
+): Gesture {
+  if (pinched) return 'pinch'
+  const { thumb, index, middle, ring, pinky } = fingers
+  const up = [thumb, index, middle, ring, pinky].filter(Boolean).length
+  if (index && middle && !ring && !pinky) return 'peace'
+  if (index && !middle && !ring && !pinky) return 'point'
+  if (up >= 4) return 'open'
+  if (up === 0) return 'fist'
+  return 'none'
+}
+
+/* -------------------------------------------------------------------- camera */
 
 async function ensureModel() {
   if (landmarker) return landmarker
@@ -277,26 +423,54 @@ async function ensureModel() {
     })
     diag.ready = true
     return landmarker
+  } catch (err) {
+    // A machine with no working GPU delegate should still get hands rather than
+    // an error — the CPU path is slower but perfectly usable at this frame size.
+    diag.lastError = `GPU delegate failed (${(err as Error)?.message ?? err}); retrying on CPU`
+    const vision = await FilesetResolver.forVisionTasks(WASM_BASE)
+    landmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
+      runningMode: 'VIDEO',
+      numHands: 2,
+    })
+    diag.ready = true
+    return landmarker
   } finally {
     diag.loading = false
   }
 }
 
+function dropHand(i: number) {
+  const at = hands.findIndex((h) => h.id === i)
+  if (at === -1) return
+  releasePress(i, hands[at])
+  hands.splice(at, 1)
+  filters.get(i)?.cursor.reset()
+  filters.get(i)?.joints.forEach((f) => f.reset())
+  settling.delete(i)
+}
+
 /**
  * The tracking loop.
  *
- * Driven by requestVideoFrameCallback rather than requestAnimationFrame: rAF
- * runs on the display's clock and will happily hand the same camera frame to
- * the model several times, burning GPU on work whose answer cannot have
- * changed. This fires once per actual frame.
+ * Driven by requestVideoFrameCallback where it exists: rAF runs on the
+ * display's clock and will happily hand the same camera frame to the model
+ * several times, burning GPU on work whose answer cannot have changed. Falls
+ * back to rAF on browsers that lack it, where the only cost is some wasted
+ * inference.
  */
-function loop() {
-  if (!running || !video || !landmarker) return
+function loop(mine: number) {
+  if (!running || mine !== generation || !video || !landmarker) return
+
   const now = performance.now()
+  // Strictly increasing, and independent of performance.now(): the model
+  // rejects a timestamp that does not advance, and enable/disable cycles would
+  // otherwise hand it the same clock twice.
+  stamp += 1
 
   let result
   try {
-    result = landmarker.detectForVideo(video, now)
+    result = landmarker.detectForVideo(video, stamp)
   } catch (err) {
     diag.lastError = String((err as Error)?.message ?? err)
     result = null
@@ -305,56 +479,82 @@ function loop() {
   const w = window.innerWidth
   const h = window.innerHeight
   const found = result?.landmarks ?? []
-  diag.hands = found.length
+  diag.count = found.length
+  const at = now / 1000
 
   for (let i = 0; i < 2; i++) {
     const marks = found[i]
-    if (!marks) {
-      const stale = pointers.findIndex((p) => p.id === i)
-      if (stale !== -1) {
-        // Let go before the reticle disappears, or whatever it was holding
-        // stays held for ever.
-        const p = pointers[stale]
-        if (p.pinched) {
-          p.pinched = false
-          emit(p)
-        }
-        pointers.splice(stale, 1)
-      }
+    if (!marks || marks.length < 21) {
+      dropHand(i)
       continue
     }
 
-    const tip = marks[INDEX_TIP]
-    const thumb = marks[THUMB_TIP]
-    const wrist = marks[WRIST]
-    const knuckle = marks[MIDDLE_MCP]
-    if (!tip || !thumb || !wrist || !knuckle) continue
-    if ((tip.visibility ?? 1) < MIN_VISIBLE && (tip.visibility ?? 1) !== 0) continue
+    const f = filtersFor(i)
 
     // Mirrored, because the camera faces you: moving your hand right should
-    // move the reticle right, not left.
-    const x = (1 - tip.x) * w
-    const y = tip.y * h
+    // move the cursor right, not left.
+    const points = marks.map((m, j) =>
+      f.joints[j].filter((1 - m.x) * w, m.y * h, at),
+    )
 
-    const span = Math.hypot(knuckle.x - wrist.x, knuckle.y - wrist.y) || 0.0001
-    const gap = Math.hypot(thumb.x - tip.x, thumb.y - tip.y) / span
+    const span = dist(points[WRIST], points[MIDDLE_MCP]) || 1
+    const gap = dist(points[THUMB_TIP], points[INDEX_TIP]) / span
 
-    let p = pointers.find((q) => q.id === i)
-    if (!p) {
-      p = { id: i, x, y, pinched: false, closeness: 0, handedness: '' }
-      pointers.push(p)
-    } else {
-      p.x += (x - p.x) * SMOOTH
-      p.y += (y - p.y) * SMOOTH
+    let hand = hands.find((q) => q.id === i)
+    if (!hand) {
+      hand = {
+        id: i, points, x: points[INDEX_TIP].x, y: points[INDEX_TIP].y,
+        pinched: false, closeness: 0, gesture: 'none',
+        fingers: { thumb: false, index: false, middle: false, ring: false, pinky: false },
+        handedness: '', span,
+      }
+      hands.push(hand)
     }
+    hand.points = points
+    hand.span = span
 
-    p.handedness = result?.handedness?.[i]?.[0]?.categoryName ?? ''
-    p.closeness = Math.max(0, Math.min(1, 1 - (gap - PINCH_ON) / (PINCH_OFF - PINCH_ON)))
-    // Hysteresis: it takes a tighter pinch to press than to keep pressing.
-    p.pinched = p.pinched ? gap < PINCH_OFF : gap < PINCH_ON
+    // Hysteresis: a tighter pinch to start than to hold.
+    const pinched = hand.pinched ? gap < PINCH_OFF : gap < PINCH_ON
+    hand.closeness = Math.max(0, Math.min(1, 1 - (gap - PINCH_ON) / (PINCH_OFF - PINCH_ON)))
 
-    emit(p)
+    /**
+     * Where the cursor sits.
+     *
+     * The index tip when open, but the midpoint between thumb and finger once
+     * you start closing — because that is the point you are actually aiming
+     * when you pinch, and letting the cursor drift to the fingertip as the
+     * fingers meet makes every press land slightly off from where it was aimed.
+     * Blended by closeness so it moves there smoothly rather than jumping.
+     */
+    const tip = points[INDEX_TIP]
+    const thumb = points[THUMB_TIP]
+    const k = hand.closeness
+    const aimed = f.cursor.filter(
+      tip.x + (thumb.x - tip.x) * 0.5 * k,
+      tip.y + (thumb.y - tip.y) * 0.5 * k,
+      at,
+    )
+    hand.x = aimed.x
+    hand.y = aimed.y
+    hand.pinched = pinched
+
+    hand.fingers = {
+      // The thumb never straightens the way the fingers do, so it is measured
+      // against its own base joint rather than by the same ratio.
+      thumb: dist(points[THUMB_TIP], points[WRIST]) > dist(points[THUMB_MCP], points[WRIST]) * 1.35
+        || dist(points[THUMB_TIP], points[INDEX_PIP]) > span * 1.1,
+      index: isExtended(points, INDEX_TIP, INDEX_PIP),
+      middle: isExtended(points, MIDDLE_TIP, MIDDLE_PIP),
+      ring: isExtended(points, RING_TIP, RING_PIP),
+      pinky: isExtended(points, PINKY_TIP, PINKY_PIP),
+    }
+    hand.gesture = stableGesture(i, classify(hand.fingers, pinched), now)
+    hand.handedness = result?.handedness?.[i]?.[0]?.categoryName ?? ''
+
+    emit(hand)
   }
+
+  diag.gesture = hands.map((q) => q.gesture).join(' + ')
 
   frames++
   if (now - fpsAt > 1000) {
@@ -363,18 +563,28 @@ function loop() {
     fpsAt = now
   }
 
-  video.requestVideoFrameCallback(loop)
+  schedule(mine)
+}
+
+function schedule(mine: number) {
+  if (!video) return
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    video.requestVideoFrameCallback(() => loop(mine))
+  } else {
+    requestAnimationFrame(() => loop(mine))
+  }
 }
 
 /** Turn the camera on and start tracking. Safe to call twice. */
 export async function enableHands(): Promise<void> {
   if (running) return
   patchPointerCapture()
+  const mine = ++generation
   try {
     // Video only. The microphone is opened elsewhere and shared; asking for it
     // again here would make Chrome drop the existing capture.
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
+      video: { width: 960, height: 540, facingMode: 'user', frameRate: { ideal: 60 } },
     })
     await ensureModel()
 
@@ -387,9 +597,8 @@ export async function enableHands(): Promise<void> {
 
     running = true
     diag.enabled = true
-    diag.lastError = ''
     fpsAt = performance.now()
-    video.requestVideoFrameCallback(loop)
+    schedule(mine)
   } catch (err) {
     diag.lastError = String((err as Error)?.message ?? err)
     disableHands()
@@ -400,12 +609,16 @@ export async function enableHands(): Promise<void> {
 /** Camera off, tracking stopped, anything held released. */
 export function disableHands(): void {
   running = false
+  generation++
   diag.enabled = false
-  diag.hands = 0
+  diag.count = 0
   diag.fps = 0
-  releaseAll()
-  pointers.length = 0
-  synth.clear()
+  diag.gesture = ''
+  for (const h of hands) releasePress(h.id, h)
+  hands.length = 0
+  presses.clear()
+  filters.clear()
+  settling.clear()
   if (video) {
     video.pause()
     video.srcObject = null
