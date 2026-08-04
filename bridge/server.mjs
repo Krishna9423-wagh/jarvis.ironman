@@ -1065,6 +1065,19 @@ wss.on('connection', (socket) => {
   }
 
   /**
+   * Which question the agent is currently answering.
+   *
+   * The stream carries no notion of a turn, so without this the client cannot
+   * tell the tail of an abandoned answer from the start of the new one — it
+   * attaches a listener and receives whatever is on the socket. Echoing the
+   * id the client sent lets it ignore anything that is not its own, which is
+   * the only reliable fix: no amount of waiting on this side changes what a
+   * listener over there has already heard.
+   */
+  let answering = null
+  const sendTurn = (msg) => send({ ...msg, ask: answering })
+
+  /**
    * Asking the browser for something and waiting for the answer.
    *
    * Every other tool here pushes — a panel, a blade, a retint — and never needs
@@ -1115,6 +1128,37 @@ wss.on('connection', (socket) => {
   const seenTools = new Set()
   const heldTools = new Map()
 
+  /**
+   * Resolves when the turn in flight has actually finished.
+   *
+   * Waiting on session.interrupt() alone is not enough. It resolves when the
+   * agent has been *told* to stop, not when it has, so the last tokens of the
+   * abandoned answer are still on their way — and since nothing on the wire
+   * identifies which question a delta belongs to, they land on the next turn's
+   * listener. Measured: ask for ALPHA, interrupt, ask for BRAVO, and BRAVO's
+   * answer arrives as "ALPHA\nBRAVO".
+   *
+   * The SDK emits exactly one `result` per turn, so that is the boundary worth
+   * waiting for. Raced against a timeout because a turn that never reports one
+   * must not wedge the conversation for ever — a stray word is a blemish, a
+   * deadlocked assistant is not.
+   */
+  let settling = Promise.resolve()
+  let finishTurn = null
+
+  const turnFinished = () =>
+    new Promise((resolve) => {
+      finishTurn = resolve
+    })
+
+  /**
+   * A brief pause so the abandoned turn's frames are tagged with the OLD id
+   * before the new one is adopted. Short, because correctness now comes from
+   * the tag rather than from the wait — this only has to cover the gap, not
+   * outlast the whole turn.
+   */
+  const SETTLE_CAP_MS = 400
+
   const announceTool = (id, name) => {
     if (!name || (id && seenTools.has(id))) return
     if (id) seenTools.add(id)
@@ -1126,7 +1170,7 @@ wss.on('connection', (socket) => {
     // interface is the interface talking about itself, not work being done for
     // the user, and the badge would be describing the very thing they can see.
     if (name.startsWith('mcp__jarvis_ui__')) return
-    if (decideTool(name)) return send({ type: 'tool', name })
+    if (decideTool(name)) return sendTurn({ type: 'tool', name })
     if (id) heldTools.set(id, name)
   }
 
@@ -1134,7 +1178,7 @@ wss.on('connection', (socket) => {
     const name = heldTools.get(id)
     if (name === undefined) return
     heldTools.delete(id)
-    if (!failed) send({ type: 'tool', name })
+    if (!failed) sendTurn({ type: 'tool', name })
   }
 
   const session = query({
@@ -1247,7 +1291,7 @@ wss.on('connection', (socket) => {
               ev.delta?.type === 'text_delta' &&
               ev.delta.text
             ) {
-              send({ type: 'text', delta: ev.delta.text })
+              sendTurn({ type: 'text', delta: ev.delta.text })
             }
             if (
               ev?.type === 'content_block_start' &&
@@ -1290,7 +1334,7 @@ wss.on('connection', (socket) => {
             // nothing to say — the HUD stops spinning and JARVIS stands there
             // silent. Say what happened instead.
             if (msg.subtype === 'success') {
-              send({
+              sendTurn({
                 type: 'done',
                 text: msg.result ?? '',
                 costUsd: msg.total_cost_usd ?? null,
@@ -1300,11 +1344,15 @@ wss.on('connection', (socket) => {
                 `[jarvis] turn failed: ${msg.subtype}`,
                 msg.errors ?? '',
               )
-              send({
+              sendTurn({
                 type: 'error',
                 message: RESULT_FAILURES[msg.subtype] ?? RESULT_FAILURES.default,
               })
             }
+            // Whatever was waiting on this turn to finish can go now. This is
+            // the only place a turn is genuinely over.
+            finishTurn?.()
+            finishTurn = null
             // One turn's tool ids are never referred to again, and these
             // otherwise grow for as long as the socket is open.
             seenTools.clear()
@@ -1347,13 +1395,31 @@ wss.on('connection', (socket) => {
     }
 
     if (msg.type === 'ask' && typeof msg.text === 'string') {
-      if (deliver) {
-        const resolve = deliver
-        deliver = null
-        resolve(msg.text)
-      } else {
-        inbox.push(msg.text)
-      }
+      /**
+       * Queued behind any interrupt that is still settling.
+       *
+       * A barge-in is two messages in quick succession — interrupt, then the
+       * new question — and session.interrupt() is asynchronous. Delivering the
+       * question the instant it arrives means the agent can still be winding
+       * down the previous turn, so its last tokens are emitted after the new
+       * one has begun and land on the new turn's listener. Measured: ask "one",
+       * interrupt, ask "two", and the answer to "two" comes back as "One."
+       *
+       * Waiting costs nothing when nothing is interrupting — the chain is an
+       * already-resolved promise — and removes the cross-talk when there is.
+       */
+      const text = msg.text
+      const id = typeof msg.id === 'string' ? msg.id : null
+      void settling.then(() => {
+        answering = id
+        if (deliver) {
+          const resolve = deliver
+          deliver = null
+          resolve(text)
+        } else {
+          inbox.push(text)
+        }
+      })
     }
 
     if (msg.type === 'reply' && typeof msg.id === 'string') {
@@ -1366,7 +1432,16 @@ wss.on('connection', (socket) => {
     }
 
     if (msg.type === 'interrupt') {
-      void session.interrupt?.().catch(() => {})
+      // Held so the next question can wait for it rather than racing it.
+      const stopped = turnFinished()
+      settling = Promise.resolve(session.interrupt?.())
+        .catch(() => {})
+        .then(() =>
+          Promise.race([
+            stopped,
+            new Promise((r) => setTimeout(r, SETTLE_CAP_MS)),
+          ]),
+        )
     }
   })
 

@@ -29,9 +29,13 @@ type Frame = {
   op?: string
   args?: unknown
   id?: string
+  ask?: string
   reason?: string
   servers?: Array<string | { name?: string }>
 }
+
+/** Every question gets an id so its answer can be told from anyone else's. */
+let askSeq = 0
 
 let socket: WebSocket | null = null
 let connecting: Promise<WebSocket> | null = null
@@ -297,11 +301,29 @@ export async function ask(
   prompt: string,
   handlers: AskHandlers,
 ): Promise<{ text: string; tools: string[] }> {
-  // Two concurrent turns would corrupt each other: both listeners see every
-  // delta, and the first 'done' resolves both with the other's text.
-  if (pending) {
-    throw new Error('JARVIS is already answering — cancel that turn first.')
-  }
+  /**
+   * A new question supersedes the one in flight.
+   *
+   * Two concurrent turns genuinely would corrupt each other — both listeners
+   * see every delta, and the first 'done' resolves both with the other's text —
+   * but refusing the new one was the wrong way to prevent that. It surfaced as
+   * "JARVIS is already answering", which is a sentence about this module's
+   * bookkeeping rather than about anything the user did, and it contradicts the
+   * premise the whole app is built on: say something and it becomes the turn.
+   *
+   * It fired far more than it looked like it should, because the only thing
+   * that cleared the slot was a barge-in — and a barge-in only fires in guard
+   * mode. A transcript can arrive well after the speech that produced it: the
+   * segment queue means several can be waiting, and their onsets happened while
+   * the machine was still listening, when nothing interrupts. So the second
+   * utterance of a normal sentence could land on a turn that was already
+   * running and simply be refused.
+   *
+   * Cancelling settles the old promise synchronously, so by the time the code
+   * below claims the slot there is nothing left to collide with. The abandoned
+   * turn's caller sees its own `stale()` check and stands down quietly.
+   */
+  if (pending) cancel()
 
   // Claim the slot in this same tick. connect() below awaits, and two calls
   // made before it settles would otherwise both sail past the check above.
@@ -326,6 +348,7 @@ export async function ask(
     return { text: '', tools: [] }
   }
 
+  const id = `a${++askSeq}`
   const tools: string[] = []
   let text = ''
 
@@ -377,6 +400,17 @@ export async function ask(
         return
       }
 
+      /**
+       * Somebody else's answer.
+       *
+       * A superseded turn keeps streaming for a moment after it is abandoned,
+       * and this listener is attached to the socket rather than to a turn — so
+       * without this check the tail of the old answer is read as the beginning
+       * of the new one. Measured before it existed: ask for ALPHA, barge in,
+       * ask for BRAVO, and BRAVO's answer came back as "ALPHA".
+       */
+      if (msg.ask && msg.ask !== id) return
+
       try {
         switch (msg.type) {
           case 'text':
@@ -417,7 +451,7 @@ export async function ask(
     arm()
 
     try {
-      ws.send(JSON.stringify({ type: 'ask', text: prompt }))
+      ws.send(JSON.stringify({ type: 'ask', text: prompt, id }))
     } catch (err) {
       // The socket can go into CLOSING between connect() resolving and here.
       fail(err instanceof Error ? err : new Error(String(err)))
