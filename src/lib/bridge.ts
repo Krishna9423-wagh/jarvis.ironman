@@ -28,6 +28,8 @@ type Frame = {
   blade?: Blade
   op?: string
   args?: unknown
+  id?: string
+  reason?: string
   servers?: Array<string | { name?: string }>
 }
 
@@ -50,6 +52,20 @@ export function watchServers(fn: (s: string[]) => void) {
 let onPanel: ((panel: Panel) => void) | null = null
 export function watchPanels(fn: (panel: Panel) => void) {
   onPanel = fn
+}
+
+/**
+ * The one request the bridge makes of us rather than the other way round.
+ *
+ * Everything else on this socket is pushed at the browser and needs no answer.
+ * A camera frame has to travel back, so this handler is registered by the app
+ * and its result is returned against the request's id.
+ */
+let onCapture: ((reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>) | null = null
+export function watchCapture(
+  fn: (reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>,
+) {
+  onCapture = fn
 }
 
 /** Blades arrive the same way panels do — pushed mid-turn, so the article is
@@ -150,6 +166,23 @@ function dispatch(ws: WebSocket) {
       onPanel?.(msg.panel)
     } else if (msg.type === 'blade' && msg.blade) {
       onBlade?.(msg.blade)
+    } else if (msg.type === 'capture' && msg.id) {
+      const id = msg.id
+      const reply = (payload: Record<string, unknown>) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'reply', id, ...payload }))
+        }
+      }
+      if (!onCapture) {
+        reply({ error: 'The interface has no camera handler.' })
+      } else {
+        // Always answers, even on failure: the bridge is holding a turn open
+        // waiting for this, and a rejection that never arrives is a turn that
+        // hangs until the idle timer notices.
+        onCapture(msg.reason ?? '')
+          .then(reply)
+          .catch((err) => reply({ error: String(err?.message ?? err) }))
+      }
     } else if (msg.type === 'ui' && msg.op) {
       // A `ui` frame with no args is normal — reset and clear take none — so an
       // absent args object is an empty one, not a reason to drop the command.

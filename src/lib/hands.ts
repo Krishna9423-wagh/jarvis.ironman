@@ -764,3 +764,59 @@ export function disableHands(): void {
 }
 
 export const handsRunning = () => running
+
+/* ------------------------------------------------------------------ looking */
+
+/** Draw the current video frame out as JPEG base64. */
+function grab(v: HTMLVideoElement): { data: string; mimeType: string } {
+  const c = document.createElement('canvas')
+  c.width = v.videoWidth || 1280
+  c.height = v.videoHeight || 720
+  const ctx = c.getContext('2d')
+  if (!ctx) throw new Error('could not read the camera frame')
+  /**
+   * Drawn unmirrored, deliberately.
+   *
+   * The tracking overlay mirrors its coordinates because a mirror is what a
+   * person expects to see of themselves. The raw frame is not mirrored, and for
+   * looking at something that is the correct choice: hold a label up to the
+   * camera and the raw frame reads it the right way round, while a mirrored one
+   * hands the model text backwards.
+   */
+  ctx.drawImage(v, 0, 0, c.width, c.height)
+  const url = c.toDataURL('image/jpeg', 0.82)
+  return { data: url.slice(url.indexOf(',') + 1), mimeType: 'image/jpeg' }
+}
+
+/**
+ * One frame from the camera.
+ *
+ * Reuses the tracking stream when hands are already on, which is both faster
+ * and less alarming — no second camera light, no second permission. When the
+ * camera is off it opens one briefly and closes it again, because the
+ * alternative is starting hand tracking as a side effect of being asked a
+ * question about a coffee cup.
+ */
+export async function captureFrame(): Promise<{ data: string; mimeType: string }> {
+  if (running && video && video.videoWidth) return grab(video)
+
+  const temp = await navigator.mediaDevices.getUserMedia({
+    video: { width: 1280, height: 720, facingMode: 'user' },
+  })
+  const v = document.createElement('video')
+  v.autoplay = true
+  v.playsInline = true
+  v.muted = true
+  v.srcObject = temp
+  try {
+    await v.play()
+    // A camera that has just been switched on hands back one or two black
+    // frames while exposure and white balance settle. Capturing immediately
+    // gives the model a dark rectangle and a confident description of nothing.
+    await new Promise((r) => setTimeout(r, 420))
+    return grab(v)
+  } finally {
+    temp.getTracks().forEach((t) => t.stop())
+    v.srcObject = null
+  }
+}

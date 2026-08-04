@@ -70,6 +70,21 @@ export function watchUi(fn: (op: string, args: any) => void): void {
 }
 
 /**
+ * The one thing the bridge asks US for.
+ *
+ * Every other channel here is the bridge volunteering something mid-turn. A
+ * camera frame is the exception — the hardware is in the browser and the model
+ * is in the bridge — so this handler answers a request rather than receiving a
+ * push. Bridge-only for the same reason as the rest: the direct path is one-shot
+ * HTTPS, with nowhere for a request to arrive.
+ */
+export function watchCapture(
+  fn: (reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>,
+): void {
+  if (usingBridge) bridge.watchCapture(fn)
+}
+
+/**
  * Barge-in. Stops the answer on both paths and settles whatever `ask()` call
  * is outstanding, so the caller's await always returns — on the bridge by
  * interrupting the agent and resolving with the text so far, on the direct

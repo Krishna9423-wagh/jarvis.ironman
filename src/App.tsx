@@ -20,6 +20,7 @@ import {
   watchServers,
   watchPanels,
   watchBlades,
+  watchCapture,
   watchUi,
   watchConnection,
   connectedLabels,
@@ -360,6 +361,30 @@ export default function App() {
     watchServers((servers) => store.getState().setConnected(servers))
     watchPanels((panel) => store.getState().pushPanel(panel))
     watchBlades((blade) => store.getState().pushBlade(blade))
+
+    /**
+     * JARVIS asking to see something.
+     *
+     * Announced on screen for as long as it takes, with whatever he said he was
+     * looking for. The camera's own light is on too, but a hardware light that
+     * appears with no explanation is exactly the thing that makes people
+     * distrust an assistant — so the interface says it before they have to ask.
+     */
+    watchCapture(async (reason) => {
+      store.getState().setLooking(reason || 'taking a look')
+      try {
+        return await hands.captureFrame()
+      } catch (err) {
+        return {
+          error:
+            (err as DOMException)?.name === 'NotAllowedError'
+              ? 'The camera is not permitted, so I cannot see anything.'
+              : `The camera could not be read: ${(err as Error)?.message ?? err}`,
+        }
+      } finally {
+        store.getState().setLooking(null)
+      }
+    })
 
     // The interface is JARVIS's to drive. These arrive out of band, pushed
     // mid-turn the way panels are, so a command can retint the reactor or put

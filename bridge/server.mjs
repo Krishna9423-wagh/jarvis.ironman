@@ -20,6 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
+import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
 import { readFileSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -273,6 +274,11 @@ function decideTool(name) {
     // withhold the one tool the whole server is for.
     if (server === 'jarvis_chrome') return true
 
+    // The camera. Not withheld behind ALLOW_WRITES: looking changes nothing,
+    // and the real gate is the browser's own camera permission plus an
+    // indicator the user can see for as long as it is live.
+    if (server === 'jarvis_eyes') return true
+
     const tool = mcpToolOf(name)
     if (EFFECTFUL_VERB.test(tool) && !VETO_EXEMPT.has(`${server}__${tool}`)) {
       return ALLOW_WRITES
@@ -407,6 +413,15 @@ browser or a web page:
 - Before anything that sends, buys, deletes or posts, say in one sentence what
   you are about to do. After it, say what happened.
 - If the browser is unreachable, say so once and carry on without it.
+
+Your eyes:
+- \`look\` takes one frame from the camera in front of them and lets you see it.
+- Use it when they ask you to look — what they are holding, what something says,
+  how something appears, whether anything is behind them. Anything whose answer
+  is in the room rather than on the machine.
+- Never take a picture they did not ask for. The camera light comes on and they
+  will see it. Curiosity is not a reason.
+- Describe what you see plainly and briefly, the same as any other answer.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
@@ -1056,6 +1071,33 @@ wss.on('connection', (socket) => {
   }
 
   /**
+   * Asking the browser for something and waiting for the answer.
+   *
+   * Every other tool here pushes — a panel, a blade, a retint — and never needs
+   * a reply. The camera is the exception: the hardware is over there and the
+   * model is here, so a frame has to come back. Correlated by id because a turn
+   * can have more than one request in flight, and timed out because a browser
+   * that has been closed mid-question would otherwise hang the turn until the
+   * two-minute idle timer noticed.
+   */
+  const waiting = new Map()
+  let asks = 0
+
+  const ask = (kind, args, timeoutMs = 20_000) =>
+    new Promise((resolve, reject) => {
+      if (socket.readyState !== socket.OPEN) {
+        return reject(new Error('the interface is not connected'))
+      }
+      const id = `q${++asks}`
+      const timer = setTimeout(() => {
+        waiting.delete(id)
+        reject(new Error('the interface did not answer in time'))
+      }, timeoutMs)
+      waiting.set(id, { resolve, timer })
+      send({ type: kind, id, ...args })
+    })
+
+  /**
    * Announcing a tool on the HUD, once, and only if it actually runs.
    *
    * A tool_use block surfaces twice — as a partial stream event and again on
@@ -1123,6 +1165,8 @@ wss.on('connection', (socket) => {
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
         jarvis_chrome: chromeServer({ allowWrites: ALLOW_WRITES }),
+        // The camera, which unlike everything else here has to ask and wait.
+        jarvis_eyes: visionServer(ask),
       },
       // A plain system prompt, not the claude_code preset. The preset is
       // tuned for a coding agent — verbose, file-oriented, and a large chunk
@@ -1315,6 +1359,15 @@ wss.on('connection', (socket) => {
         resolve(msg.text)
       } else {
         inbox.push(msg.text)
+      }
+    }
+
+    if (msg.type === 'reply' && typeof msg.id === 'string') {
+      const slot = waiting.get(msg.id)
+      if (slot) {
+        waiting.delete(msg.id)
+        clearTimeout(slot.timer)
+        slot.resolve(msg)
       }
     }
 

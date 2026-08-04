@@ -112,7 +112,12 @@ const Body = memo(function Body({ blade }: { blade: Blade }) {
       <iframe
         className="bl-frame"
         src={pageUrl(blade.url, blade.mode ?? 'reader')}
-        sandbox=""
+        // allow-scripts WITHOUT allow-same-origin. That combination is the
+        // point: the page runs in an opaque origin, so the one script the
+        // bridge injects can move the document's own scroll position and can
+        // reach nothing of ours — not this origin, not the agent socket. Adding
+        // allow-same-origin would hand a page found on the web the keys.
+        sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         title={blade.title}
       />
@@ -202,6 +207,26 @@ function Card({
   /** Where the user has dragged it, relative to its slot. */
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const shell = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+
+  /**
+   * Scroll whatever this blade is showing.
+   *
+   * Two destinations, because a blade holds two different kinds of thing. Its
+   * own overflow for markup and galleries; a postMessage for an article, since
+   * an iframe is a separate document that the parent cannot scroll directly —
+   * see the shim in bridge/page.mjs.
+   */
+  const scrollContent = (dy: number) => {
+    const el = body.current
+    if (!el) return
+    const frame = el.querySelector('iframe')
+    if (frame?.contentWindow) {
+      frame.contentWindow.postMessage({ jarvis: 'scroll', dy }, '*')
+    } else {
+      el.scrollTop += dy
+    }
+  }
 
   /**
    * Drag and resize both listen on `window`, and that is the whole trick.
@@ -245,6 +270,27 @@ function Card({
     if (expanded) return
     const from = { ...pos }
     grab(e, (dx, dy) => setPos({ x: from.x + dx, y: from.y + dy }))
+  }
+
+  /**
+   * Drag inside the body to scroll it — but only for a hand.
+   *
+   * `pointerType` is what makes this safe to add. The gesture layer dispatches
+   * its events as 'touch', so a pinch-and-pull scrolls the way it would on a
+   * phone; a real mouse keeps its wheel and, more importantly, keeps being able
+   * to select text. Drag-to-scroll bound to the mouse as well would make an
+   * article impossible to quote from.
+   */
+  const onBodyDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return
+    if (!focused) onFocus()
+    let last = 0
+    grab(e, (_dx, dy) => {
+      // Inverted, like touch scrolling everywhere: pulling the content up moves
+      // you down the page.
+      scrollContent(last - dy)
+      last = dy
+    })
   }
 
   const onGrip = (e: React.PointerEvent) => {
@@ -358,7 +404,7 @@ function Card({
           </span>
         </header>
 
-        <div className="bl-body">
+        <div className="bl-body" ref={body} onPointerDown={onBodyDown}>
           <Body blade={blade} />
         </div>
 

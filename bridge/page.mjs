@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { fetchText, peek, proxyError } from './net.mjs'
 
 /**
@@ -33,6 +34,36 @@ import { fetchText, peek, proxyError } from './net.mjs'
  *            publisher that somebody read it — which is exactly as true as it
  *            would be if the user had opened the tab themselves.
  */
+
+/**
+ * The one script allowed to run inside a proxied page.
+ *
+ * A blade shows articles in an iframe, and an iframe is its own document — the
+ * parent cannot scroll it, cannot reach into it, and must not be able to. That
+ * is correct for safety and inconvenient for reading: a hand has no scroll
+ * wheel, so without a channel the only way through a long article is a mouse.
+ *
+ * So the page gets one listener, injected by us, that scrolls on request and
+ * does nothing else. It is admitted by nonce rather than by 'unsafe-inline', so
+ * this exact script runs and anything the publisher shipped does not — and the
+ * frame is sandboxed WITHOUT allow-same-origin, so the script executes in an
+ * opaque origin that cannot touch this application even though it can move its
+ * own scroll position.
+ */
+const SCROLL_SHIM = `
+addEventListener('message', function (e) {
+  var d = e.data
+  if (!d || d.jarvis !== 'scroll') return
+  if (d.to === 'top') { window.scrollTo({ top: 0, behavior: 'smooth' }); return }
+  if (d.to === 'bottom') { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); return }
+  window.scrollBy({ top: d.dy || 0, behavior: d.smooth ? 'smooth' : 'auto' })
+})
+// Announce, so the blade knows the listener exists rather than posting into a
+// document that has rendered but not yet run anything. Without this the first
+// scroll of every article is silently dropped, which reads as scrolling being
+// broken rather than early.
+try { parent.postMessage({ jarvis: 'ready' }, '*') } catch (e) {}
+`
 
 const MAX_PAGE_BYTES = 8 * 1024 * 1024
 const PAGE_TIMEOUT_MS = 15_000
@@ -370,9 +401,17 @@ export async function renderPage(url, mode, bridgeOrigin) {
   }
 
   const live = mode === 'live'
-  const body = live
+  const nonce = randomBytes(16).toString('base64')
+  const shim = `<script nonce="${nonce}">${SCROLL_SHIM}</script>`
+  const rendered = live
     ? toLive(page.text, page.url)
     : toReader(page.text, page.url, bridgeOrigin)
+  // Appended rather than injected into <head>: by this point every other script
+  // is gone, so there is nothing for it to race, and </body> is somewhere every
+  // one of these documents actually has.
+  const body = rendered.includes('</body>')
+    ? rendered.replace('</body>', `${shim}</body>`)
+    : rendered + shim
 
   // The framed document's own policy. The parent page's CSP does not reach in
   // here — an iframe gets its rules from its own response — so this is the only
@@ -381,10 +420,10 @@ export async function renderPage(url, mode, bridgeOrigin) {
   const csp = live
     ? "default-src 'none'; img-src https: http: data: blob:; " +
       "style-src 'unsafe-inline' https: http: data:; font-src https: http: data:; " +
-      "media-src https: http: data:; script-src 'none'; form-action 'none'; " +
+      `media-src https: http: data:; script-src 'nonce-${nonce}'; form-action 'none'; ` +
       "frame-src 'none'; object-src 'none'; base-uri 'none'"
     : `default-src 'none'; img-src ${bridgeOrigin} data:; ` +
-      "style-src 'unsafe-inline'; script-src 'none'; form-action 'none'; " +
+      `style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'none'; ` +
       "frame-src 'none'; object-src 'none'; base-uri 'none'"
 
   return {
@@ -395,7 +434,18 @@ export async function renderPage(url, mode, bridgeOrigin) {
       'content-security-policy': csp,
       'x-content-type-options': 'nosniff',
       referrerpolicy: 'no-referrer',
-      'cache-control': 'private, max-age=300',
+      /**
+       * Not cached, deliberately.
+       *
+       * A proxied article is read once and the bytes are cheap to re-fetch, so
+       * caching buys very little. What it costs is real: the document carries a
+       * per-response CSP nonce and an injected script, and a cached copy is a
+       * frozen pairing of both. During development that meant iframes silently
+       * replaying a version of the page from before the scroll shim existed —
+       * scrolling appeared broken while the freshly served bytes were perfect,
+       * which took far longer to find than the feature took to write.
+       */
+      'cache-control': 'no-store',
     },
   }
 }

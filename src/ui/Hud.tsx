@@ -158,6 +158,7 @@ export function Hud() {
   const voice = useStore((s) => s.voice)
   const bootNote = useStore((s) => s.bootNote)
   const gestures = useStore((s) => s.gestures)
+  const looking = useStore((s) => s.looking)
   const ui = useStore((s) => s.ui)
 
   // accentFor folds JARVIS's overrides in over the phase colour, so one
@@ -330,7 +331,11 @@ export function Hud() {
       {/* Above even the effects: the reticle shows where a press will land, and
           a press that lands under a flourish is a press you cannot aim. */}
       <Pointer />
-      {gestures && <div className="hands-live">CAMERA ON · G TO STOP</div>}
+      {(gestures || looking) && (
+        <div className="hands-live">
+          {looking ? `LOOKING — ${looking.toUpperCase()}` : 'CAMERA ON · G TO STOP'}
+        </div>
+      )}
       <GestureGuide live={gestures} />
     </div>
   )
