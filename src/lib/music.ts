@@ -2,9 +2,14 @@
  * Score.
  *
  * Three cues, all local files under public/audio/:
- *   boot-music — a cinematic swell that plays once when the reactor comes up
- *   ambient    — a low bed that loops under everything, ducked while speaking
- *   work       — an industrial cue that fades in while a tool is running
+ *   boot-music — the JARVIS start-up sound, once, as the reactor comes up
+ *   ambient    — the opening music, once, alongside it
+ *   work       — an industrial cue that loops while a tool is running
+ *
+ * Only `work` repeats. The other two belong to the power-up and are over when
+ * it is: an interface that keeps playing music at you for as long as it is open
+ * is one you end up muting, and a muted assistant loses the sounds that
+ * actually carry meaning — the wake tone, the tool tick, the completion chime.
  *
  * All of it is Kevin MacLeod (incompetech.com), CC BY 4.0 — free to use with
  * attribution and safe on a monetised channel, unlike the actual film score,
@@ -34,7 +39,16 @@ const LEVEL: Record<Cue, number> = {
   // it sits forward — it is meant to be heard as the reactor comes up, the way
   // the film plays it. The ambient bed underneath stays a whisper.
   'boot-music': 0.85,
-  ambient: 0.075,
+  /**
+   * Raised from the 0.075 it sat at as an all-session bed.
+   *
+   * That number was chosen for something you were never meant to notice, which
+   * is the right level for a whisper running for an hour and the wrong one for
+   * a piece that plays once and stops. Under a start-up sound at 0.85 it was
+   * inaudible — technically playing, and no different from silence. This is
+   * still clearly underneath, just actually there.
+   */
+  ambient: 0.2,
   work: 0.11,
 }
 
@@ -56,7 +70,9 @@ function track(cue: Cue): Track | null {
   if (!t) {
     const el = new Audio(`/audio/${cue}.mp3`)
     el.preload = 'auto'
-    el.loop = cue !== 'boot-music'
+    // Only the work cue repeats. It has to, because it covers an operation of
+    // unknown length; the two power-up cues are events with an end.
+    el.loop = cue === 'work'
     el.volume = 0
     // A missing file is not an error worth surfacing — the interface just
     // runs without that layer.
@@ -151,8 +167,24 @@ export function playBoot() {
   else t.el.addEventListener('loadedmetadata', arm, { once: true })
 }
 
+/**
+ * The opening music. Once, from the top, and then it is finished.
+ *
+ * The four-second fade this used to have made sense for a bed that ran all
+ * session — it had all the time in the world to arrive. For a cue that plays
+ * once alongside the boot sequence it was spending a third of the track easing
+ * in, so it is short now: present from the first beat, like the start-up sound
+ * it plays under.
+ *
+ * Nothing stops it. The element does not loop, so it ends when the track ends.
+ */
 export function startAmbient() {
-  set('ambient', LEVEL.ambient, 4000)
+  const t = track('ambient')
+  if (!t) return
+  // From the top every time, so a second power-up in the same page sounds like
+  // the first rather than resuming wherever the last one left off.
+  t.el.currentTime = 0
+  set('ambient', LEVEL.ambient, 900)
 }
 
 export function stopAll() {
