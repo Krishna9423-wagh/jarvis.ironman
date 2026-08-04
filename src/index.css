@@ -1764,3 +1764,109 @@ kbd {
 
 /* A resized blade is sized inline, so the presets must not fight it. */
 .bl[style*="width"] { max-width: none; max-height: none }
+
+/* ------------------------------------------------------------------- hands */
+/*
+   The reticle. Fixed and above everything, because it represents where a press
+   will land and must never be occluded by the thing it is about to press.
+   pointer-events: none throughout — the reticle is a picture of a pointer, not
+   a pointer; the actual events are synthesised and dispatched at the element
+   underneath it (see src/lib/hands.ts).
+*/
+.hands {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.hand-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  /* --close runs 0 (open) to 1 (pinched) and drives the ring. */
+  --close: 0;
+  transition: opacity 180ms ease;
+  will-change: transform;
+}
+
+.hand-ring,
+.hand-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Tightens from 46px to 20px as the fingers close, so the press is something
+   you can see coming rather than a state change you discover after the fact. */
+.hand-ring {
+  width: calc(46px - 26px * var(--close));
+  height: calc(46px - 26px * var(--close));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow:
+    0 0 14px -2px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+  opacity: calc(0.5 + 0.5 * var(--close));
+}
+
+.hand-core {
+  width: 6px;
+  height: 6px;
+  background: color-mix(in srgb, var(--accent) 92%, white);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+/* Pressed. The ring snaps to a filled dot so the moment of contact is
+   unmistakable — this is the only feedback that a click actually happened. */
+.hand-dot[data-pinched='1'] .hand-ring {
+  border-color: color-mix(in srgb, var(--accent) 100%, white);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 22px -2px color-mix(in srgb, var(--accent) 85%, transparent);
+}
+.hand-dot[data-pinched='1'] .hand-core {
+  width: 9px;
+  height: 9px;
+  background: #fff;
+}
+
+/* The camera indicator. Deliberately always visible while tracking runs: an
+   interface that can see the room has to say so without being asked. */
+.hands-live {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 91;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: color-mix(in srgb, var(--accent) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, rgba(2, 8, 12, 0.8));
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.hands-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 8px #ff4d4d;
+  animation: handsPulse 1.6s ease-in-out infinite;
+}
+@keyframes handsPulse {
+  0%, 100% { opacity: 1 }
+  50%      { opacity: 0.35 }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hands-live::before { animation: none }
+}

@@ -222,6 +222,9 @@ type State = {
   connected: string[]
   /** Name of the speech-synthesis voice in use, shown in the HUD. */
   voice: string
+  /** Whether the camera is on and hands are being tracked. Store-backed rather
+   *  than read off the tracker, because the indicator has to re-render. */
+  gestures: boolean
   /** Transient status line during boot, e.g. the voice model download. */
   bootNote: string
   /** Cards currently on the display, newest last. */
@@ -236,6 +239,7 @@ type State = {
   ui: UiState
 
   setVoice: (v: string) => void
+  setGestures: (on: boolean) => void
   setBootNote: (n: string) => void
   pushPanel: (p: Panel) => void
   clearPanels: () => void
@@ -271,6 +275,7 @@ export const useStore = create<State>((set) => ({
   error: null,
   connected: [],
   voice: '',
+  gestures: false,
   panels: [],
   blades: [],
   focusedBlade: null,
@@ -279,6 +284,7 @@ export const useStore = create<State>((set) => ({
   ui: defaultUi(),
 
   setVoice: (voice) => set({ voice }),
+  setGestures: (gestures) => set({ gestures }),
   setBootNote: (bootNote) => set({ bootNote }),
   // Three is as many as fits around the reactor without crowding it. Sticky
   // panels are exempt from the cull — the tool description promises they stay

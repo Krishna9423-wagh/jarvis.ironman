@@ -5,6 +5,7 @@ import { Suggestions } from './Suggestions'
 import { Panels } from './Panels'
 import { BladeSweep, Blades } from './Blades'
 import { Effects } from './Effects'
+import { Pointer } from './Pointer'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -155,6 +156,7 @@ export function Hud() {
   const level = useStore((s) => s.level)
   const voice = useStore((s) => s.voice)
   const bootNote = useStore((s) => s.bootNote)
+  const gestures = useStore((s) => s.gestures)
   const ui = useStore((s) => s.ui)
 
   // accentFor folds JARVIS's overrides in over the phase colour, so one
@@ -309,7 +311,7 @@ export function Hud() {
 
       <footer className="hud-bottom">
         <span className="hint">
-          say <b>“hey jarvis”</b> · <kbd>Space</kbd> to talk
+          say <b>“hey jarvis”</b> · <kbd>Space</kbd> to talk · <kbd>G</kbd> hands
           {voice && (
             <>
               {' · '}
@@ -323,6 +325,11 @@ export function Hud() {
           underneath the chrome. It is pointer-events: none and unmounts the
           instant it finishes. */}
       <Effects />
+
+      {/* Above even the effects: the reticle shows where a press will land, and
+          a press that lands under a flourish is a press you cannot aim. */}
+      <Pointer />
+      {gestures && <div className="hands-live">CAMERA ON · G TO STOP</div>}
     </div>
   )
 }

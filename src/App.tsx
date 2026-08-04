@@ -9,6 +9,7 @@ import { startVoice, type Voice, type VoiceMode } from './lib/voice'
 import { createSpeaker, cycleVoice, currentVoiceName } from './lib/tts'
 import * as sfx from './lib/sfx'
 import * as music from './lib/music'
+import * as hands from './lib/hands'
 import * as kokoro from './lib/kokoro'
 import { TTS_ENGINE } from './config'
 import { forTool, attention } from './lib/fillers'
@@ -509,6 +510,34 @@ export default function App() {
         return
       }
 
+      // G puts the camera on and starts tracking hands. Off by default and
+      // never implicit: a webcam that turns itself on because an interface
+      // thought it might be useful is not a trade anyone agreed to.
+      if (e.key === 'g' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        const on = store.getState().gestures
+        if (on) {
+          hands.disableHands()
+          store.getState().setGestures(false)
+        } else {
+          store.getState().setError(null)
+          void hands
+            .enableHands()
+            .then(() => store.getState().setGestures(true))
+            .catch((err: Error) => {
+              store.getState().setGestures(false)
+              store
+                .getState()
+                .setError(
+                  err?.name === 'NotAllowedError'
+                    ? 'Camera access denied — gesture control is unavailable.'
+                    : `Gesture control failed to start: ${err?.message ?? err}`,
+                )
+            })
+        }
+        return
+      }
+
       // T speaks a fixed line, bypassing the wake word, the recogniser and the
       // model entirely. When "I can't hear him" is the report, this is the one
       // keypress that separates a broken voice engine from a broken voice loop
@@ -569,6 +598,8 @@ export default function App() {
       if (voicePoll.current) clearInterval(voicePoll.current)
       voice.current?.stop()
       speaker.current?.cancel()
+      // The camera must not outlive the page that turned it on.
+      hands.disableHands()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
