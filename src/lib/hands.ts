@@ -132,7 +132,33 @@ const EXTEND_RATIO = 1.12
  * becomes a point by way of several ambiguous frames — and acting on those
  * intermediate readings is what makes gesture interfaces feel possessed.
  */
-const GESTURE_HOLD_MS = 120
+const GESTURE_HOLD_MS = 200
+
+/**
+ * A pinch has to survive this long before it presses.
+ *
+ * Pinch used to be exempt from any hold at all, on the reasoning that a press
+ * is the one gesture where latency is felt. True, but it made every transition
+ * between poses a hazard: going from a framing L to a point, or from a fist to
+ * an open hand, takes the fingers through arrangements that momentarily read as
+ * a pinch. Each of those fired a press — grabbing a blade you were not touching
+ * and dropping it somewhere you did not choose.
+ *
+ * Seventy milliseconds is four frames. It is comfortably below the threshold at
+ * which a press feels delayed, and comfortably above the one or two frames a
+ * hand spends passing through a shape on its way to another one.
+ */
+const PINCH_CONFIRM_MS = 70
+
+/**
+ * After the finger pose changes, presses are ignored for this long.
+ *
+ * The confirm window above catches a pinch that flickers. This catches the
+ * other half of the problem: a pose that genuinely settles into something
+ * pinch-shaped for a moment while the hand is still rearranging itself. Both
+ * are needed, because they fail in opposite directions.
+ */
+const POSE_SETTLE_MS = 220
 
 /** Below this many pixels of travel, a press was a click rather than a drag. */
 const CLICK_SLOP = 20
@@ -150,7 +176,7 @@ const AIM_LAG_MS = 190
 /** Nothing older than this is kept; two frames' worth of slack over the lag. */
 const TRAIL_MS = 500
 
-export type Gesture = 'point' | 'pinch' | 'open' | 'fist' | 'peace' | 'none'
+export type Gesture = 'point' | 'pinch' | 'frame' | 'open' | 'fist' | 'peace' | 'none'
 export type Side = 'left' | 'right'
 
 /**
@@ -298,6 +324,10 @@ const filters = new Map<number, Filters>()
 
 /** Recent cursor positions per hand, so a press can aim from before the pinch. */
 const trails = new Map<number, { x: number; y: number; at: number }[]>()
+/** When the fingers first closed, per hand — see PINCH_CONFIRM_MS. */
+const pinchSince = new Map<number, number>()
+/** When the finger pose last changed, per hand — see POSE_SETTLE_MS. */
+const poseChangedAt = new Map<number, number>()
 
 function filtersFor(id: number): Filters {
   let f = filters.get(id)
@@ -517,6 +547,15 @@ function classify(
   const { thumb, index, middle, ring, pinky } = fingers
   const up = [thumb, index, middle, ring, pinky].filter(Boolean).length
   if (index && middle && !ring && !pinky) return 'peace'
+  /**
+   * The framing pose — index up, thumb out, the rest curled. The corner of a
+   * rectangle, the shape people already make when they mime framing a shot.
+   *
+   * Tested before `point`, and it has to be: a framing hand also has exactly
+   * one finger extended, so the point rule would swallow it. The thumb is the
+   * whole difference between "I am aiming at that" and "I am sizing this".
+   */
+  if (thumb && index && !middle && !ring && !pinky) return 'frame'
   if (index && !middle && !ring && !pinky) return 'point'
   if (up >= 4) return 'open'
   if (up === 0) return 'fist'
@@ -567,6 +606,8 @@ function dropHand(i: number) {
   settling.delete(i)
   sideVote.delete(i)
   trails.delete(i)
+  pinchSince.delete(i)
+  poseChangedAt.delete(i)
 }
 
 /**
@@ -667,8 +708,27 @@ function loop(mine: number) {
     hand.points = points
     hand.span = span
 
-    // Hysteresis: a tighter pinch to start than to hold.
-    const pinched = hand.pinched ? gap < PINCH_OFF : gap < PINCH_ON
+    /**
+     * Hysteresis, then confirmation, then a settling window.
+     *
+     * Three filters rather than one because they catch different things. The
+     * hysteresis stops a held pinch flickering on the boundary. The
+     * confirmation stops a pinch that lasts a frame or two on the way between
+     * poses. The settling window stops one that arrives while the hand is still
+     * rearranging after a deliberate change of gesture. A press has to get past
+     * all three, and an intentional pinch does so without noticing they exist.
+     */
+    const wantsPinch = hand.pinched ? gap < PINCH_OFF : gap < PINCH_ON
+    if (wantsPinch && !hand.pinched) {
+      pinchSince.set(i, pinchSince.get(i) ?? now)
+    } else if (!wantsPinch) {
+      pinchSince.delete(i)
+    }
+    const held = pinchSince.get(i)
+    const settledLongEnough = now - (poseChangedAt.get(i) ?? 0) > POSE_SETTLE_MS
+    const pinched = hand.pinched
+      ? wantsPinch
+      : wantsPinch && held !== undefined && now - held >= PINCH_CONFIRM_MS && settledLongEnough
     hand.closeness = Math.max(0, Math.min(1, 1 - (gap - PINCH_ON) / (PINCH_OFF - PINCH_ON)))
 
     /**
@@ -728,7 +788,13 @@ function loop(mine: number) {
       ring: isExtended(points, RING_TIP, RING_PIP),
       pinky: isExtended(points, PINKY_TIP, PINKY_PIP),
     }
+    const wasGesture = hand.gesture
     hand.gesture = stableGesture(i, classify(hand.fingers, pinched), now)
+    // A change of pose starts the settling window. Pinch is not counted: it is
+    // the thing being protected, not a transition to recover from.
+    if (hand.gesture !== wasGesture && hand.gesture !== 'pinch' && wasGesture !== 'pinch') {
+      poseChangedAt.set(i, now)
+    }
     hand.handedness = votedSide(i, side)
 
     emit(hand)
@@ -806,6 +872,8 @@ export function disableHands(): void {
   settling.clear()
   sideVote.clear()
   trails.clear()
+  pinchSince.clear()
+  poseChangedAt.clear()
   if (video) {
     video.pause()
     video.srcObject = null
@@ -818,19 +886,74 @@ export function disableHands(): void {
 }
 
 /**
- * Both hands pinched at once, and how far apart they are.
+ * Both hands framing, and how big the box between them is.
  *
- * Published as a plain measurement rather than as a "zoom", because this file
- * does not know what is on screen and should not decide what pulling your hands
- * apart means. Whoever is interested reads the span and chooses — the blades
- * treat it as a resize, and anything added later is free to treat it as
- * something else.
+ * The gesture is the one people already make to mime a rectangle: index up,
+ * thumb out, two corners held apart. Pulling them apart makes the box bigger;
+ * bringing them together makes it smaller.
+ *
+ * Depth comes free. Moving both hands toward the camera makes everything about
+ * them larger in the image, including the distance between them, so leaning in
+ * grows the box and leaning back shrinks it — without a single line about z,
+ * which is the noisiest number MediaPipe reports.
+ *
+ * The corner is measured at the crook between thumb and index rather than at
+ * the index tip, because that is where the corner of the imagined rectangle
+ * actually is, and it is the point that stays still while the fingers spread.
+ *
+ * Published as a plain distance. This file does not know what is on screen and
+ * has no business deciding that a bigger box means a bigger blade.
  */
-export function twoHandSpan(): number | null {
-  if (hands.length < 2) return null
-  const [a, b] = hands
-  if (!a.pinched || !b.pinched) return null
-  return Math.hypot(a.x - b.x, a.y - b.y)
+/**
+ * How many hands are currently pinching.
+ *
+ * A single pinch is a grab. Two at once is not two grabs — it is somebody doing
+ * something with both hands, and whatever that is, it is not "drag this blade
+ * to two places at once". Consumers use this to stand down rather than fight
+ * each other for the same object.
+ */
+export function pinchCount(): number {
+  return hands.filter((h) => h.pinched).length
+}
+
+export function frameSpan(): number | null {
+  const framing = hands.filter((h) => h.gesture === 'frame')
+  if (framing.length < 2) return null
+  const [a, b] = framing
+  const corner = (h: Hand) => ({
+    x: (h.points[THUMB_TIP].x + h.points[INDEX_TIP].x) / 2,
+    y: (h.points[THUMB_TIP].y + h.points[INDEX_TIP].y) / 2,
+  })
+  const ca = corner(a)
+  const cb = corner(b)
+  return Math.hypot(ca.x - cb.x, ca.y - cb.y)
+}
+
+/**
+ * Two fingers up, moved vertically — how far, since the pose began.
+ *
+ * Scrolling needed its own gesture once pinch became "grab this blade". A pinch
+ * cannot mean both grab and scroll, and grabbing is what people reach for
+ * first: they see a thing and try to pick it up. So scrolling gets the pose
+ * that is deliberate and hard to make by accident.
+ *
+ * Returns pixels travelled since the two fingers went up, or null when nobody
+ * is holding the pose. Published as a distance rather than as a scroll for the
+ * same reason as twoHandSpan — this file does not know what is on screen.
+ */
+let peaceFrom: { id: number; y: number } | null = null
+
+export function peaceScroll(): number | null {
+  const hand = hands.find((h) => h.gesture === 'peace')
+  if (!hand) {
+    peaceFrom = null
+    return null
+  }
+  if (!peaceFrom || peaceFrom.id !== hand.id) {
+    peaceFrom = { id: hand.id, y: hand.y }
+    return 0
+  }
+  return hand.y - peaceFrom.y
 }
 
 export const handsRunning = () => running

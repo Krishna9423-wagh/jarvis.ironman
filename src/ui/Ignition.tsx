@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from 'framer-motion'
 import { useStore } from '../store'
 
 /**
@@ -8,31 +7,49 @@ import { useStore } from '../store'
  * interacted with the page, so something has to be clicked before JARVIS can
  * make a sound. Rather than hide that behind a permissions banner, it's the
  * cold open: a dead interface waiting to be switched on.
+ *
+ * Deliberately NOT wrapped in AnimatePresence, and the reason is worth keeping.
+ *
+ * It used to be, for the sake of a blur-and-fade on the way out, and the exit
+ * never completed — the node reached opacity 0 and then stayed in the DOM for
+ * the rest of the session. Which would be a cosmetic non-event, except this is
+ * a `position: fixed; inset: 0` button: invisible, unremovable, and the topmost
+ * hit-testable thing under every single point on the screen.
+ *
+ * Everything that aims by hit-testing died on it. Hand control resolves its
+ * target with elementFromPoint, so every pinch — focus, grab, drag, close —
+ * landed on an invisible button instead of a blade, silently, with no error and
+ * nothing on screen to suggest why. It cost an entire evening of looking at the
+ * gesture code, which was fine.
+ *
+ * Two attempted fixes failed and are worth recording so nobody re-attempts
+ * them. Giving the child a `key` did not make the exit complete. Adding a
+ * phase-dependent `pointerEvents` did not help either, because AnimatePresence
+ * renders an exiting child from a frozen snapshot of its last props — inside
+ * that copy the phase is forever 'offline', so a guard written in terms of it
+ * can never fire.
+ *
+ * A plain conditional cannot strand anything. The fade-in survives because
+ * mounting is not the dangerous direction; the fade-out is gone, and the boot
+ * sequence takes the screen immediately anyway, so there is nothing to see.
  */
 export function Ignition({ onStart }: { onStart: () => void }) {
   const phase = useStore((s) => s.phase)
+  if (phase !== 'offline') return null
 
   return (
-    <AnimatePresence>
-      {phase === 'offline' && (
-        <motion.button
-          className="ignition"
-          onClick={onStart}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, filter: 'blur(12px)', transition: { duration: 0.8 } }}
-        >
-          <motion.span
-            className="ignition-ring"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
-          />
-          <span className="ignition-label">
-            <span className="ignition-word">INITIALISE</span>
-            <span className="ignition-sub">click, or clap, to power up</span>
-          </span>
-        </motion.button>
-      )}
-    </AnimatePresence>
+    <button className="ignition" onClick={onStart}>
+      {/*
+        Spun by CSS rather than framer. As a motion element with
+        `repeat: Infinity` it was one of the things keeping the exit from ever
+        finishing — AnimatePresence waits for a leaving subtree's animations,
+        and an infinite one never ends.
+      */}
+      <span className="ignition-ring" />
+      <span className="ignition-label">
+        <span className="ignition-word">INITIALISE</span>
+        <span className="ignition-sub">click, or clap, to power up</span>
+      </span>
+    </button>
   )
 }

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, type Blade } from '../store'
 import { BRIDGE_HTTP_URL } from '../config'
 import { sanitisePanelHtml } from './sanitise'
-import { twoHandSpan } from '../lib/hands'
+import { frameSpan, peaceScroll, pinchCount } from '../lib/hands'
 
 /**
  * The blades.
@@ -252,7 +252,35 @@ function Card({
     e.stopPropagation()
     const sx = e.clientX
     const sy = e.clientY
-    const move = (ev: PointerEvent) => onMove(ev.clientX - sx, ev.clientY - sy)
+    let baseX = sx
+    let baseY = sy
+    let dx = 0
+    let dy = 0
+
+    const move = (ev: PointerEvent) => {
+      /**
+       * Both hands pinching means this is not a drag.
+       *
+       * One pinch is a grab. Two is somebody doing something two-handed, and
+       * whichever hand happened to press first should not be hauling the blade
+       * around underneath it — the result is a blade that lurches away while
+       * you are trying to do something else with both hands.
+       *
+       * Suppressed by re-anchoring rather than by returning early. A plain
+       * return would leave the origin where the press began, so the moment one
+       * hand released, the blade would leap by however far the other hand had
+       * travelled in the meantime. Moving the origin with the hand keeps the
+       * offset constant, so letting go of one hand simply resumes from here.
+       */
+      if (ev.pointerType === 'touch' && pinchCount() > 1) {
+        baseX = ev.clientX - dx
+        baseY = ev.clientY - dy
+        return
+      }
+      dx = ev.clientX - baseX
+      dy = ev.clientY - baseY
+      onMove(dx, dy)
+    }
     const done = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', done)
@@ -274,36 +302,74 @@ function Card({
   }
 
   /**
-   * Drag inside the body to scroll it — but only for a hand.
+   * Pinch anywhere on a blade to grab it.
    *
-   * `pointerType` is what makes this safe to add. The gesture layer dispatches
-   * its events as 'touch', so a pinch-and-pull scrolls the way it would on a
-   * phone; a real mouse keeps its wheel and, more importantly, keeps being able
-   * to select text. Drag-to-scroll bound to the mouse as well would make an
-   * article impossible to quote from.
+   * This used to scroll, and moving a blade was possible only by hitting the
+   * header — a strip 31 pixels tall. Asking someone to land a hand cursor on 31
+   * pixels is not an interaction, and since a pinch on the body scrolled
+   * instead, there was in practice no way to move a blade by hand at all.
+   *
+   * Grabbing is also what people try first: you see a thing and reach for it.
+   * So a pinch anywhere picks the blade up, and scrolling moves to a pose that
+   * is deliberate and hard to make by accident — two fingers, see the effect
+   * below. Only for 'touch', which is what the gesture layer dispatches; a mouse
+   * keeps its wheel and its ability to select text.
    */
   const onBodyDown = (e: React.PointerEvent) => {
     if (e.pointerType !== 'touch') return
     if (!focused) onFocus()
-    let last = 0
-    grab(e, (_dx, dy) => {
-      // Inverted, like touch scrolling everywhere: pulling the content up moves
-      // you down the page.
-      scrollContent(last - dy)
-      last = dy
-    })
+    if (expanded) return
+    const from = { ...pos }
+    grab(e, (dx, dy) => setPos({ x: from.x + dx, y: from.y + dy }))
   }
 
   /**
-   * Pinch with both hands and pull apart to resize the front blade.
+   * Two fingers up, moved up or down, scrolls the front blade.
    *
-   * The measurement comes from hands.ts as a plain span between two pinched
-   * cursors — it does not know what a blade is, and should not. What it means
-   * is decided here: the ratio against the span at the moment both hands closed
-   * scales the blade, which is the same arithmetic a trackpad pinch does.
+   * Reads a distance from hands.ts and decides here that it means scrolling —
+   * the tracker publishes the pose, not the consequence.
+   */
+  useEffect(() => {
+    if (!focused) return
+    let raf = 0
+    let last: number | null = null
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const travelled = peaceScroll()
+      if (travelled === null) {
+        last = null
+        return
+      }
+      if (last === null) {
+        last = travelled
+        return
+      }
+      // Inverted and amplified: pulling your hand up moves you down the page,
+      // and a hand does not have the travel a scroll wheel does.
+      scrollContent((last - travelled) * 2.4)
+      last = travelled
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [focused])
+
+  /**
+   * Frame the blade with both hands to resize it.
    *
-   * Only the focused blade, and never while expanded, where the size is the
-   * whole point of the state.
+   * Index up, thumb out, one hand either side — the rectangle people already
+   * mime when they frame a shot. Pull the corners apart and the blade grows;
+   * bring them together and it shrinks; lean toward the camera and it grows
+   * too, because leaning in enlarges everything about the hands including the
+   * gap between them.
+   *
+   * This replaced a two-handed pinch, which read well on paper and collided
+   * badly in practice: a pinch is how you GRAB a blade, so two of them meant
+   * two hands each trying to pick something up while also asking to resize it.
+   * The framing pose collides with nothing, which is most of why it is right.
+   *
+   * The measurement arrives as a plain distance; that it means a resize is
+   * decided here. Only the focused blade, and never while expanded, where the
+   * size is the entire point of the state.
    */
   useEffect(() => {
     if (!focused || expanded) return
@@ -311,7 +377,7 @@ function Card({
     let from: { span: number; w: number; h: number } | null = null
     const tick = () => {
       raf = requestAnimationFrame(tick)
-      const span = twoHandSpan()
+      const span = frameSpan()
       if (span === null) {
         from = null
         return

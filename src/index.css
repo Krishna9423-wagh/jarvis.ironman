@@ -1869,3 +1869,19 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .hands-live::before { animation: none }
 }
+
+/* Spun in CSS, deliberately. Under framer this was an infinitely repeating
+   animation, and AnimatePresence will not unmount a subtree whose animations
+   never end — which left the whole ignition overlay on top of the interface
+   for the entire session, swallowing every click and every pinch. */
+.ignition-ring { animation: ignitionSpin 18s linear infinite }
+
+@keyframes ignitionSpin {
+  from { transform: rotate(0deg) }
+  to   { transform: rotate(360deg) }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .ignition-ring { animation: none }
+}

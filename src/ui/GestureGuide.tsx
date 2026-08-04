@@ -18,9 +18,10 @@ import { diag } from '../lib/hands'
 
 const MOVES: { gesture: string; hand: string; does: string }[] = [
   { gesture: 'point', hand: '☝', does: 'move the cursor' },
-  { gesture: 'pinch', hand: '🤏', does: 'press · drag · close' },
+  { gesture: 'pinch', hand: '🤏', does: 'grab a blade · move it · press' },
   { gesture: 'open', hand: '🖐', does: 'let go' },
-  { gesture: 'both', hand: '🤝', does: 'pinch two hands to resize' },
+  { gesture: 'peace', hand: '✌', does: 'two fingers up-down to scroll' },
+  { gesture: 'frame', hand: '📐', does: 'two L-corners to resize' },
 ]
 
 /** How long the legend stays after the first successful press. */
