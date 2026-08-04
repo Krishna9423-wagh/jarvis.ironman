@@ -141,6 +141,20 @@ export type Gesture = 'point' | 'pinch' | 'open' | 'fist' | 'peace' | 'none'
 export type Side = 'left' | 'right'
 
 /**
+ * Whether MediaPipe's handedness label needs inverting.
+ *
+ * False, because that is what the screen actually showed. The older Hands docs
+ * note that handedness assumes a mirrored selfie image and should be swapped if
+ * your input is not mirrored — we feed the raw camera frame, so a swap looked
+ * right on paper and named every hand backwards in practice. This build of the
+ * Tasks API already reports the real hand.
+ *
+ * A constant rather than a hardcoded expression so that a different build, or a
+ * genuinely pre-mirrored input, is a one-word change.
+ */
+const SWAP_HANDEDNESS = false
+
+/**
  * Which tracked hand a detection belongs to.
  *
  * Handedness alone is not enough to key on, and using it that way caused the
@@ -578,16 +592,23 @@ function loop(mine: number) {
     if (!marks || marks.length < 21) continue
 
     /**
-     * Which hand this is, and why the label is flipped.
+     * Which hand this is.
      *
-     * MediaPipe determines handedness *assuming the input image is already
-     * mirrored* — the selfie convention. We feed it the raw camera frame and
-     * mirror only the output coordinates, so every label arrives inverted:
-     * your right hand is reported as "Left". Correcting it here rather than at
-     * each use means nothing downstream has to remember this.
+     * This was inverted, and the inversion was reasoned rather than observed —
+     * from the note in MediaPipe's older Hands docs saying handedness is
+     * determined assuming a mirrored selfie image, and to swap it if your input
+     * is not mirrored. We feed the raw camera frame, so on paper a swap was
+     * correct. On this build of the Tasks API it is not: the label already
+     * describes the actual hand, and swapping it named every hand wrongly.
+     *
+     * Taken at face value now, because that is what the screen showed. Kept as
+     * one named constant rather than folded into the expression so that if it
+     * ever needs flipping again — a different build, a genuinely mirrored
+     * input — it is one line and one word, not an archaeology exercise.
      */
     const raw = labels[k]?.[0]?.categoryName ?? ''
-    const side: Side = raw === 'Left' ? 'right' : raw === 'Right' ? 'left' : 'left'
+    const named: Side = raw === 'Right' ? 'right' : 'left'
+    const side: Side = SWAP_HANDEDNESS ? (named === 'right' ? 'left' : 'right') : named
 
     /**
      * Identity has to come from the hand, not from its position in the array.
