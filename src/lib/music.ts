@@ -52,15 +52,18 @@ const LEVEL: Record<Cue, number> = {
   // the film plays it. The ambient bed underneath stays a whisper.
   'boot-music': 0.85,
   /**
-   * Raised from the 0.075 it sat at as an all-session bed.
+   * Under the intro, not alongside it.
    *
-   * That number was chosen for something you were never meant to notice, which
-   * is the right level for a whisper running for an hour and the wrong one for
-   * a piece that plays once and stops. Under a start-up sound at 0.85 it was
-   * inaudible — technically playing, and no different from silence. This is
-   * still clearly underneath, just actually there.
+   * This has been wrong in both directions. At 0.075 — the level it had as an
+   * all-session whisper — it was inaudible beneath a start-up sound at 0.85,
+   * technically playing and no different from silence. At 0.2 it was audible
+   * and competing: the intro is the thing with words in it, and two pieces of
+   * music at similar levels means neither is heard properly.
+   *
+   * 0.1 is the compromise that respects the ordering. The intro carries; the
+   * track is present underneath it rather than beside it.
    */
-  ambient: 0.2,
+  ambient: 0.1,
   work: 0.11,
 }
 
