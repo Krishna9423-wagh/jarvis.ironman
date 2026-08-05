@@ -4,6 +4,7 @@ import { useStore, type Blade } from '../store'
 import { BRIDGE_HTTP_URL } from '../config'
 import { sanitisePanelHtml } from './sanitise'
 import { frameSpan, peaceScroll, pinchCount } from '../lib/hands'
+import * as camera from '../lib/camera'
 
 /**
  * The blades.
@@ -107,7 +108,58 @@ function embedUrl(raw: string): string | null {
  * same-origin would let a page JARVIS found on the web reach that socket. It
  * does not need it. It is being read, not run.
  */
+/**
+ * The live camera, on screen.
+ *
+ * Holding the camera for as long as the blade is open does two jobs. It shows
+ * the user what JARVIS can see, which is the honest way to run a camera; and it
+ * starts the rolling buffer, which is the only reason "what did I just do" can
+ * ever be answered — a question that cannot be satisfied by starting to record
+ * at the moment it is asked.
+ *
+ * Mirrored here and only here. A person expects their own image to behave like
+ * a reflection, so the preview is flipped for them; the frames handed to the
+ * model are not, because a label held up to the lens has to arrive the right
+ * way round.
+ */
+const CameraView = memo(function CameraView() {
+  const el = useRef<HTMLVideoElement>(null)
+  const [failed, failed_] = useState<string | null>(null)
+
+  useEffect(() => {
+    let held = false
+    let gone = false
+    void camera
+      .holdCamera()
+      .then((source) => {
+        if (gone) {
+          camera.releaseCamera()
+          return
+        }
+        held = true
+        camera.startBuffer()
+        if (el.current && source.srcObject) el.current.srcObject = source.srcObject
+      })
+      .catch((err: DOMException) =>
+        failed_(
+          err?.name === 'NotAllowedError'
+            ? 'Camera access is not permitted.'
+            : `The camera could not be opened: ${err?.message ?? err}`,
+        ),
+      )
+    return () => {
+      gone = true
+      if (held) camera.releaseCamera()
+    }
+  }, [])
+
+  if (failed) return <p className="bl-note">{failed}</p>
+  return <video ref={el} className="bl-camera" autoPlay playsInline muted />
+})
+
 const Body = memo(function Body({ blade }: { blade: Blade }) {
+  if (blade.kind === 'camera') return <CameraView />
+
   if (blade.kind === 'article' && blade.url) {
     return (
       <iframe

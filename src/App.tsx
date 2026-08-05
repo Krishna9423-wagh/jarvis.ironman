@@ -11,6 +11,7 @@ import * as sfx from './lib/sfx'
 import * as music from './lib/music'
 import * as hands from './lib/hands'
 import { listenForClap } from './lib/clap'
+import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
 import { TTS_ENGINE } from './config'
 import { forTool, attention } from './lib/fillers'
@@ -372,10 +373,41 @@ export default function App() {
      * appears with no explanation is exactly the thing that makes people
      * distrust an assistant — so the interface says it before they have to ask.
      */
-    watchCapture(async (reason) => {
-      store.getState().setLooking(reason || 'taking a look')
+    watchCapture(async (req) => {
+      const note =
+        req.mode === 'watch'
+          ? req.when === 'past'
+            ? req.reason || 'reviewing the last few seconds'
+            : `${req.reason || 'watching'} · ${req.seconds}s`
+          : req.reason || 'taking a look'
+      store.getState().setLooking(note)
+
+      // The past is only available if something has been remembering it, and
+      // that only happens while the camera is on screen. Answering plainly
+      // beats opening the camera and recording the next few seconds instead,
+      // which is a different question from the one that was asked.
+      if (req.mode === 'watch' && req.when === 'past' && camera.bufferedSeconds() < 1) {
+        store.getState().setLooking(null)
+        return {
+          error:
+            'There is no recent footage — the camera has to be open on screen ' +
+            'for me to remember what just happened. Ask me to open the camera, ' +
+            'and I can watch from then on.',
+        }
+      }
+
+      // Held for the whole capture. Without this the stream can be torn down by
+      // whoever else was using it half way through a six-second watch.
+      let held = false
       try {
-        return await hands.captureFrame()
+        await camera.holdCamera()
+        held = true
+        if (req.mode === 'look') return camera.grabFrame()
+        if (req.when === 'past') {
+          const grid = camera.recentGrid(req.seconds, 9)
+          return grid ?? { error: 'There is not enough recent footage to review.' }
+        }
+        return await camera.watchAhead(req.seconds, 9)
       } catch (err) {
         return {
           error:
@@ -384,6 +416,7 @@ export default function App() {
               : `The camera could not be read: ${(err as Error)?.message ?? err}`,
         }
       } finally {
+        if (held) camera.releaseCamera()
         store.getState().setLooking(null)
       }
     })

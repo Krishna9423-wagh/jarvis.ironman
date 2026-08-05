@@ -238,6 +238,10 @@ Choosing what to open:
   embed   — a YouTube or Vimeo watch URL. It is turned into a player.
   markup  — your own composed HTML, in the same .hud-* system the display tool
             uses, when none of the above is the shape of the answer.
+  camera  — the live view from the user's camera, on screen. Open it when they
+            ask to see the camera, or when they want you to watch them do
+            something: while it is open you can also review the seconds that
+            have just passed, which you cannot do otherwise. Needs no url.
 
 Size is about reading, not decoration. \`tall\` is a reading column — use it for
 any article the user intends to actually read. \`wide\` suits images, video and
@@ -256,7 +260,7 @@ const bladeSchema = {
     .string()
     .describe('Two to four words naming what this is, e.g. "REUTERS" or "MARK VII".'),
   kind: z
-    .enum(['article', 'image', 'gallery', 'video', 'embed', 'markup'])
+    .enum(['article', 'image', 'gallery', 'video', 'embed', 'markup', 'camera'])
     .describe('What is being opened. See the tool description.'),
   url: z
     .string()

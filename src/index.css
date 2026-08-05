@@ -1885,3 +1885,14 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .ignition-ring { animation: none }
 }
+
+/* The live camera inside a blade. Mirrored, because a person expects their own
+   image to behave like a reflection — the frames sent to the model are not. */
+.bl-camera {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: #000;
+}

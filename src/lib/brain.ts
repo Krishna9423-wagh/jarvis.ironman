@@ -79,7 +79,7 @@ export function watchUi(fn: (op: string, args: any) => void): void {
  * HTTPS, with nowhere for a request to arrive.
  */
 export function watchCapture(
-  fn: (reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>,
+  fn: (req: bridge.CaptureRequest) => Promise<bridge.CaptureResult>,
 ): void {
   if (usingBridge) bridge.watchCapture(fn)
 }

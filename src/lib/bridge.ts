@@ -31,6 +31,9 @@ type Frame = {
   id?: string
   ask?: string
   reason?: string
+  mode?: string
+  seconds?: number
+  when?: string
   servers?: Array<string | { name?: string }>
 }
 
@@ -65,10 +68,18 @@ export function watchPanels(fn: (panel: Panel) => void) {
  * A camera frame has to travel back, so this handler is registered by the app
  * and its result is returned against the request's id.
  */
-let onCapture: ((reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>) | null = null
-export function watchCapture(
-  fn: (reason: string) => Promise<{ data?: string; mimeType?: string; error?: string }>,
-) {
+export type CaptureRequest = {
+  /** 'look' for a single frame, 'watch' for a grid over time. */
+  mode: 'look' | 'watch'
+  reason: string
+  seconds: number
+  /** 'now' records forward; 'past' reads the rolling buffer. */
+  when: 'now' | 'past'
+}
+export type CaptureResult = { data?: string; mimeType?: string; error?: string }
+
+let onCapture: ((req: CaptureRequest) => Promise<CaptureResult>) | null = null
+export function watchCapture(fn: (req: CaptureRequest) => Promise<CaptureResult>) {
   onCapture = fn
 }
 
@@ -183,7 +194,12 @@ function dispatch(ws: WebSocket) {
         // Always answers, even on failure: the bridge is holding a turn open
         // waiting for this, and a rejection that never arrives is a turn that
         // hangs until the idle timer notices.
-        onCapture(msg.reason ?? '')
+        onCapture({
+          mode: msg.mode === 'watch' ? 'watch' : 'look',
+          reason: msg.reason ?? '',
+          seconds: Math.max(2, Math.min(15, Number(msg.seconds) || 6)),
+          when: msg.when === 'past' ? 'past' : 'now',
+        })
           .then(reply)
           .catch((err) => reply({ error: String(err?.message ?? err) }))
       }

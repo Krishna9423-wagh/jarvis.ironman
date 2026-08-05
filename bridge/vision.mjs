@@ -41,6 +41,31 @@ One frame per question. If you need to see something again after they have
 moved or turned it around, take another — do not ask them to hold still while
 you reason about a picture you already have.`
 
+
+const WATCH_DESCRIPTION = `Watch through the camera over time, not just once.
+
+Returns a grid of frames from a few seconds of video, in order, each stamped
+with its offset. That is how motion becomes something you can actually read: one
+still tells you what is there, a grid tells you what CHANGED.
+
+Use it when the answer is in the movement rather than the moment — "am I doing
+this right", "what am I doing wrong", "watch my form", "did that work", "what
+just happened". Anything where a single photograph would miss the point.
+
+Two directions, and choosing correctly matters:
+  now  — record the next few seconds. For "watch me do this", where the thing
+         has not happened yet when they ask.
+  past — the seconds that have ALREADY happened. For "what did I just do",
+         which cannot be answered by starting to record when asked. Only works
+         while the camera is open on screen; if it is not, say so and offer to
+         open it and watch again.
+
+Keep it short. Six seconds is usually plenty, and a longer window spreads the
+same number of frames thinner rather than showing you more.
+
+Describe what you saw as a sequence — what changed between the frames — rather
+than listing them. The user knows what their own hands look like.`
+
 /**
  * @param {(kind: string, args: object) => Promise<object>} ask
  *   Sends a request to the browser and resolves with its reply.
@@ -109,6 +134,76 @@ export function visionServer(ask) {
                 data: reply.data,
                 mimeType: reply.mimeType ?? 'image/jpeg',
               },
+            ],
+          }
+        },
+      ),
+      tool(
+        'watch',
+        WATCH_DESCRIPTION,
+        {
+          seconds: z
+            .union([z.number(), z.string()])
+            .optional()
+            .catch(undefined)
+            .describe('How long to watch, 2 to 15. Default 6.'),
+          when: z
+            .enum(['now', 'past'])
+            .optional()
+            .catch(undefined)
+            .describe(
+              "now = watch what happens next, starting immediately. " +
+                "past = look at the seconds that have ALREADY happened, which " +
+                'only works while the camera is open on screen.',
+            ),
+          reason: z
+            .string()
+            .optional()
+            .catch(undefined)
+            .describe('A few words on what you are watching for, shown on screen.'),
+        },
+        async (args) => {
+          let reply
+          try {
+            reply = await ask(
+              'capture',
+              {
+                mode: 'watch',
+                seconds: Number(args.seconds) || 6,
+                when: args.when ?? 'now',
+                reason: String(args.reason ?? '').slice(0, 80),
+              },
+              // Generous: a forward watch genuinely takes as long as it says it
+              // will, and timing out mid-recording would discard the whole clip.
+              45_000,
+            )
+          } catch (err) {
+            return {
+              isError: true,
+              content: [
+                {
+                  type: 'text',
+                  text: `Could not watch: ${err?.message ?? err}. Tell the user and carry on.`,
+                },
+              ],
+            }
+          }
+          if (reply?.error) {
+            return { isError: true, content: [{ type: 'text', text: String(reply.error) }] }
+          }
+          if (typeof reply?.data !== 'string' || !reply.data) {
+            return { isError: true, content: [{ type: 'text', text: 'The camera returned nothing.' }] }
+          }
+          return {
+            content: [
+              {
+                type: 'text',
+                text:
+                  'Frames from the camera, in order, each stamped with its time ' +
+                  'offset in seconds. Read them left to right, top to bottom — ' +
+                  'they are one continuous clip, not separate pictures.',
+              },
+              { type: 'image', data: reply.data, mimeType: reply.mimeType ?? 'image/jpeg' },
             ],
           }
         },
