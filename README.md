@@ -1,18 +1,34 @@
-# J.A.R.V.I.S. — Iron Man Holographic AI Assistant
+# J.A.R.V.I.S. — Iron Man Holographic AI Assistant & Autonomous macOS Agent
 
 <p align="center">
-  <img src="assets/jarvis-hud-preview.jpg" alt="J.A.R.V.I.S. Iron Man Interface" width="100%" />
+  <img src="assets/hud_screenshot.png" alt="J.A.R.V.I.S. Iron Man Tactical HUD" width="49%" />
+  <img src="assets/jarvis-hud-preview.jpg" alt="J.A.R.V.I.S. Web Interface" width="49%" />
 </p>
 
 <p align="center">
   <a href="https://jarvis-ironman-bay.vercel.app/"><img src="https://img.shields.io/badge/Live%20Demo-jarvis--ironman--bay.vercel.app-00f0ff?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo" /></a>
-  <img src="https://img.shields.io/badge/Interface-Three.js%20%7C%20GLSL%20%7C%20React-cyan?style=for-the-badge" alt="Tech" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Web-00E5FF?style=for-the-badge" alt="Platform" />
+  <img src="https://img.shields.io/badge/Agent-Autonomous%20Claude%20Brain-FF0055?style=for-the-badge" alt="Brain" />
+  <img src="https://img.shields.io/badge/Vision-MediaPipe%20Gestures-00FF66?style=for-the-badge" alt="Vision" />
+  <img src="https://img.shields.io/badge/UI-PyQt6%20%2B%20Three.js-FFB300?style=for-the-badge" alt="UI" />
   <img src="https://img.shields.io/badge/License-MIT-orange?style=for-the-badge" alt="License" />
 </p>
 
-### 🌐 Live Web Demo
-Experience the interactive holographic interface directly in your browser:  
-👉 **[https://jarvis-ironman-bay.vercel.app/](https://jarvis-ironman-bay.vercel.app/)**
+> **⚡ J.A.R.V.I.S.** is a complete, futuristic AI assistant combining an **autonomous macOS desktop agent** with an authentic **Iron Man holographic HUD**. Powered by Claude LLM with multi-step tool-calling, local speech recognition (English, Hindi, Hinglish), real-time MediaPipe computer vision hand tracking, and a 3-tier permission security model.
+
+---
+
+### 🌐 Quick Access & Architecture
+
+| Feature | 🖥️ Native macOS Agent & Tactical HUD | 🌐 Holographic Web Console |
+| :--- | :--- | :--- |
+| **Core Technology** | Python 3 + PyQt6 + MediaPipe Tasks Vision | React 19 + Vite + Three.js + Custom GLSL |
+| **AI Brain** | Autonomous Claude tool-calling agent loop | Claude Agent SDK via local WebSocket bridge |
+| **Vision & Gestures** | Zero-lag MediaPipe HandLandmarker (7 gestures) | WebGL MediaPipe Hand Tracker + pointer events |
+| **Voice Engine** | Local VAD + ambient calibration + macOS speech | Browser Speech API / ElevenLabs + Porcupine |
+| **OS Automation** | WhatsApp, iMessage, Mail, Contacts, Spotlight, Shell | Headless MCP tool execution |
+| **Window Mode** | Tactical 3-column HUD + Compact Always-On-Top (`C`) | Full-screen interactive WebGL holographic canvas |
+| **Launch Command** | `python3 main.py --hud` | `npm run dev` (or visit [Live Demo](https://jarvis-ironman-bay.vercel.app/)) |
 
 ---
 

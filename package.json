@@ -1,8 +1,8 @@
 {
   "name": "jarvis",
   "private": true,
-  "version": "0.0.0",
-  "description": "A browser voice assistant with an Iron Man holographic interface, driven by Claude Code through a small Node bridge.",
+  "version": "1.0.0",
+  "description": "J.A.R.V.I.S. — Complete Autonomous macOS Voice & Hand-Gesture AI Assistant with Iron Man Tactical Holographic HUD, MediaPipe Vision, 3-Tier Permissions & Claude Brain.",
   "license": "MIT",
   "type": "module",
   "engines": {
