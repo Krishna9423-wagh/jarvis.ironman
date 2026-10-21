@@ -8,6 +8,7 @@
  */
 
 import type { AskHandlers } from './anthropic'
+import { askGoogleGenAI } from './gemini'
 
 export type JarvisAiResponse = {
   text: string
@@ -226,9 +227,14 @@ export async function askJarvisAi(
 
   if (geminiKey) {
     try {
-      return await askGeminiDirect(prompt, geminiKey, handlers)
+      return await askGoogleGenAI(prompt, geminiKey, handlers)
     } catch (e) {
-      console.warn('[jarvis-ai] Gemini direct error, using Stark heuristic engine', e)
+      console.warn('[jarvis-ai] GoogleGenAI error, falling back to direct stream', e)
+      try {
+        return await askGeminiDirect(prompt, geminiKey, handlers)
+      } catch (err2) {
+        console.warn('[jarvis-ai] Gemini direct error, using Stark heuristic engine', err2)
+      }
     }
   }
 
