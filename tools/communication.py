@@ -10,7 +10,9 @@ Features:
 - Instagram direct messages
 """
 
+import os
 import re
+import time
 import urllib.parse
 import subprocess
 import smtplib
@@ -18,7 +20,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-import os
 from pathlib import Path
 from config import log_event
 

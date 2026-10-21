@@ -12,20 +12,21 @@ import os
 from PyQt6 import QtGui, QtCore
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Core Color Palette
 # ---------------------------------------------------------------------------
-BG_DARK = "#050B14"               # Deep navy / void black background
-BG_SURFACE = "#091322"            # Dark HUD panel base
-BG_CARD = "rgba(10, 22, 38, 0.78)"  # Translucent glassmorphic card
-BG_CARD_HOVER = "rgba(16, 36, 62, 0.90)"
+BG_DARK = "#050B14"               # Deep navy / void black background (#050B14)
+BG_SURFACE = "#0A1A28"            # Panels base (#0A1A28)
+BG_CARD = "#0A1A28"               # Panels background (#0A1A28)
+BG_CARD_HOVER = "#0F263B"
 BG_CARD_ACTIVE = "rgba(0, 229, 255, 0.15)"
 
-CYAN_ACCENT = "#00E5FF"           # Electric Arc Reactor Cyan
+CYAN_ACCENT = "#00E5FF"           # Accent cyan (#00E5FF)
 CYAN_GLOW = "rgba(0, 229, 255, 0.50)"
 CYAN_MUTED = "#1A5C7A"
 
-NEON_GREEN = "#00FF9D"            # Successful trigger & action confirmation
-GREEN_GLOW = "rgba(0, 255, 157, 0.45)"
+NEON_GREEN = "#7CFFB2"            # Success green (#7CFFB2)
+GREEN_GLOW = "rgba(124, 255, 178, 0.45)"
 
 AMBER_WARN = "#FFB300"            # Holding steady / debounce countdown
 AMBER_GLOW = "rgba(255, 179, 0, 0.45)"
@@ -34,11 +35,11 @@ RED_ALERT = "#FF3D71"             # Mute / Cancel / Emergency stop
 RED_GLOW = "rgba(255, 61, 113, 0.45)"
 
 TEXT_PRIMARY = "#E0F7FA"          # Crisp luminous white/cyan
-TEXT_SECONDARY = "#80DEEA"        # Subdued cyan
+TEXT_SECONDARY = "#9FB6C8"        # Secondary text (#9FB6C8)
 TEXT_MUTED = "#455A64"            # Telemetry dark grey
 
-BORDER_NEON = "rgba(0, 229, 255, 0.32)"
-BORDER_ACTIVE = "rgba(0, 229, 255, 0.95)"
+BORDER_NEON = "#1B3A4F"           # 1px borders (#1B3A4F)
+BORDER_ACTIVE = "#00E5FF"
 BORDER_MUTED = "rgba(255, 255, 255, 0.08)"
 
 # ---------------------------------------------------------------------------
@@ -47,7 +48,7 @@ BORDER_MUTED = "rgba(255, 255, 255, 0.08)"
 _FONTS_LOADED = False
 
 def init_theme_fonts():
-    """Register custom Google Fonts (Orbitron, Rajdhani) if available."""
+    """Register custom Google Fonts (Orbitron, Rajdhani, Inter) if available."""
     global _FONTS_LOADED
     if _FONTS_LOADED:
         return
@@ -57,11 +58,14 @@ def init_theme_fonts():
     
     orbitron_path = os.path.join(fonts_dir, "Orbitron.ttf")
     rajdhani_path = os.path.join(fonts_dir, "Rajdhani.ttf")
+    inter_path = os.path.join(fonts_dir, "Inter.ttf")
 
     if os.path.exists(orbitron_path):
         QtGui.QFontDatabase.addApplicationFont(orbitron_path)
     if os.path.exists(rajdhani_path):
         QtGui.QFontDatabase.addApplicationFont(rajdhani_path)
+    if os.path.exists(inter_path):
+        QtGui.QFontDatabase.addApplicationFont(inter_path)
 
     _FONTS_LOADED = True
 
@@ -80,7 +84,8 @@ def get_tech_font(size=12, bold=False) -> QtGui.QFont:
     return font
 
 def get_body_font(size=11, bold=False) -> QtGui.QFont:
-    font = QtGui.QFont("Helvetica Neue", size)
+    init_theme_fonts()
+    font = QtGui.QFont("Inter", size)
     font.setBold(bold)
     return font
 
@@ -95,14 +100,14 @@ QMainWindow, QDialog {{
 
 QWidget {{
     color: {TEXT_PRIMARY};
-    font-family: 'Rajdhani', 'Helvetica Neue', 'Arial';
+    font-family: 'Inter', 'Rajdhani', 'Helvetica Neue', 'Arial';
 }}
 
 /* Glassmorphism Card Panels */
 QFrame.hud-card {{
     background-color: {BG_CARD};
     border: 1px solid {BORDER_NEON};
-    border-radius: 12px;
+    border-radius: 16px;
 }}
 
 QFrame.hud-card:hover {{

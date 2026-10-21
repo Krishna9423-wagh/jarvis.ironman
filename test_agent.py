@@ -34,6 +34,16 @@ def run_agent_tests():
     print("\033[92m=> TEST 1 PASSED (SAFE Action executed immediately)\033[0m")
 
     # ---------------------------------------------------------
+    # TEST 1b: SAFE Action - "open Instagram"
+    # ---------------------------------------------------------
+    print("\n\033[94m[TEST 1b: SAFE Action - 'open Instagram']\033[0m")
+    res1b = agent.process_turn("open Instagram")
+    print(f"User: open Instagram\nJarvis: {res1b}")
+    assert "instagram" in res1b.lower() or "opened" in res1b.lower(), "Test 1b Failed"
+    assert agent.permissions.pending_action is None, "SAFE action should not be gated"
+    print("\033[92m=> TEST 1b PASSED (SAFE Action executed immediately)\033[0m")
+
+    # ---------------------------------------------------------
     # TEST 2: SAFE Action - "search Python tutorials on YouTube"
     # ---------------------------------------------------------
     print("\n\033[94m[TEST 2: SAFE Action - 'search Python tutorials on YouTube']\033[0m")
