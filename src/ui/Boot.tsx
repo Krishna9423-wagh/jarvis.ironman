@@ -21,7 +21,7 @@ import { useStore } from '../store'
 
 /** The stage boundaries, in milliseconds from power-on. `done` is when the
  *  overlay dissolves; App owns the actual hand-off, this is only for pacing. */
-const T = { rings: 2600, suit: 5200, reactor: 7200 }
+const T = { rings: 900, suit: 1800, reactor: 2700 }
 
 const LOG = [
   'MOUNT F:/BACKUP/GHOST (HIDDEN)',

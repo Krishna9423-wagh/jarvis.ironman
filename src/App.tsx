@@ -15,7 +15,7 @@ import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
 import { TTS_ENGINE } from './config'
-import { forTool, attention } from './lib/fillers'
+import { forTool } from './lib/fillers'
 import {
   ask,
   warm,
@@ -64,11 +64,11 @@ const newId = () =>
 
 /** The same mishearings voice.ts accepts for the wake word — otherwise a turn
  *  that woke him as "travis" gets that word sent on to the model as a question. */
-const NAME = '(?:jarvis|jarvys|jervis|travis|jarviss|java\'s|jarv)'
-/** A bare vocative — "Jarvis", "hey jarvis" — with nothing asked. */
-const BARE_NAME = new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*${NAME}[\\s,.!?]*$`, 'i')
+const NAME = '(?:jarvis[a-z]*|jarvish|jarvys|jervis|travis|java\'s|jarv|jarwis[a-z]*|jarves|jarvez|javis[a-z]*|service|harvest|starvis)'
+/** A bare vocative — "Jarvis", "hey jarvis", "hi jarvisi" — with nothing asked. */
+const BARE_NAME = new RegExp(`^(?:hey|hi|hello|ok|okay|yo|listen)?\\s*${NAME}[\\s,.!?]*$`, 'i')
 /** A leading vocative on a real command: "Jarvis, what's the weather". */
-const LEADING_NAME = new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*${NAME}\\b[\\s,.:!?-]*`, 'i')
+const LEADING_NAME = new RegExp(`^(?:hey|hi|hello|ok|okay|yo|listen)?\\s*${NAME}\\b[\\s,.:!?-]*`, 'i')
 
 export default function App() {
   const store = useStore
@@ -244,24 +244,14 @@ export default function App() {
     store.getState().setError(null)
     sfx.play('wake')
 
-    // "Jarvis, what's happening in AI this week" in one breath. Waiting for a
-    // greeting he didn't need is the most common way an assistant wastes time.
+    // "Jarvis, what's happening in AI this week" in one breath.
     if (trailing) {
       void respond(trailing)
       return
     }
 
-    store.getState().setPhase('waking')
-
-    // Answer to his name. Deliberately NOT awaited any more: the microphone is
-    // already open and the echo filter knows his voice, so the user can talk
-    // straight over the greeting instead of waiting it out.
-    const greeting = createSpeaker()
-    speaker.current = greeting
-    greeting.say(attention())
-    void greeting.end()
-
-    listen(AWAIT_SPEECH_MS)
+    // Bare wake word or greeting ("hi jarvisi", "hey jarvis") -> vocal & visual in-character reply
+    void respond('Hi Jarvis')
   }
 
   /**
@@ -294,15 +284,14 @@ export default function App() {
     const phase = store.getState().phase
     if (phase === 'offline' || phase === 'boot' || phase === 'dormant') return
 
-    // People keep using his name as a vocative once they're already talking to
-    // him. Strip it rather than sending "jarvis" to the model as a question.
+    // If user said only his name / greeting ("hey jarvis", "hi jarvisi"), respond in character
     if (BARE_NAME.test(text)) {
-      listen(AWAIT_SPEECH_MS)
+      void respond('Hi Jarvis')
       return
     }
     const said = text.replace(LEADING_NAME, '').trim()
     if (!said) {
-      listen(AWAIT_SPEECH_MS)
+      void respond('Hi Jarvis')
       return
     }
 
@@ -488,19 +477,13 @@ export default function App() {
       }, 200)
     }
 
-    // Long enough for the four-beat start-up sequence in Boot.tsx to play —
-    // status bar, rings, suit schematic, reactor power-up — before the live
-    // interface takes over. Kept a touch under the boot cue so the music is
-    // still rising as the reactor lands.
-    await new Promise((r) => setTimeout(r, 9200)) // boot sequence
+    // Start-up sequence in Boot.tsx — status bar, rings, suit schematic, reactor power-up
+    await new Promise((r) => setTimeout(r, 3600)) // fast responsive boot sequence
     await warming
     store.getState().setConnected(connectedLabels())
     store.getState().setVoice(currentVoiceName())
 
-    // The analyser is what makes the reactor pulse with your voice. It needs a
-    // getUserMedia stream; speech recognition does not, and gets its own. So a
-    // failure here costs the animation and nothing else — saying "voice input
-    // is unavailable" was both alarming and untrue.
+    // The analyser is what makes the reactor pulse with your voice.
     try {
       await startAnalyser()
     } catch {
@@ -510,9 +493,7 @@ export default function App() {
       )
     }
 
-    // Ask the bridge which speech engines exist before the loop starts, so the
-    // first turn already uses ElevenLabs when a key is present and the browser
-    // fallback when it is not — no flag, no reload.
+    // Ask the bridge which speech engines exist before the loop starts
     await probeCapabilities()
 
     // One voice loop, started once, running until the page closes.
@@ -526,6 +507,10 @@ export default function App() {
     })
 
     store.getState().setPhase('dormant')
+    const greeting = createSpeaker()
+    greeting.say('Jarvis online and listening, Sir.')
+    void greeting.end()
+    listen(AWAIT_SPEECH_MS)
   }
 
   // -- clap to start --------------------------------------------------------

@@ -78,7 +78,7 @@ const WAKE_DEBOUNCE = 1500
  * indication why. Better a rare false wake than a name that does not answer.
  */
 const WAKE =
-  /\b(?:hey|hi|ok|okay|yo)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv)\b(?!'s)/i
+  /\b(?:hey|hi|hello|ok|okay|yo|listen)?\s*(?:jarvis[a-z]*|jarvish|jarvys|jervis|travis|java's|jarv|jarwis[a-z]*|jarves|jarvez|javis[a-z]*|service|harvest|starvis)\b(?!'s)/i
 
 /** Everything after the wake phrase, which is usually the actual command. */
 function afterWake(text: string): string {
@@ -267,7 +267,7 @@ const norm = (s: string) =>
  * would be the single most infuriating failure this file could have.
  */
 const OVERRIDE =
-  /\b(stop|wait|jarvis|cancel|enough|quiet|hold on|shut up|never ?mind|forget it|no)\b/i
+  /\b(stop|wait|jarvis[a-z]*|jarvish|jarvys|jervis|travis|jarwis[a-z]*|javis[a-z]*|cancel|enough|quiet|hold on|shut up|never ?mind|forget it|no|hi|hello|hey)\b/i
 
 /**
  * Words too common to be evidence of anything.
@@ -700,6 +700,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     }
     const heard = `${settled}${fresh} ${interim}`.replace(/\s+/g, ' ').trim()
     if (!heard) return
+    console.log('[jarvis heard]:', heard, '| mode:', mode)
     if (isEcho(`${fresh} ${interim}`, speakingNow())) {
       interim = ''
       return
@@ -755,28 +756,35 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     bumpSilence()
   }
 
+  let starting = false
   const spin = () => {
-    if (stopped || running) return
+    if (stopped || running || starting) return
+    starting = true
     rec = new Ctor()
     rec.continuous = true
     rec.interimResults = true
-    rec.lang = 'en-GB'
+    rec.lang = navigator.language || 'en-US'
     rec.onstart = () => {
+      starting = false
       running = true
       diag.running = true
       diag.sessions++
       touch()
+      console.log('[jarvis voice]: speech recognition active (lang:', rec.lang, ')')
     }
     rec.onresult = onResult
     rec.onerror = (ev: any) => {
+      starting = false
       diag.lastError = String(ev.error ?? '')
+      console.warn('[jarvis voice error]:', ev.error)
       if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
         stopped = true
         diag.running = false
-        h.onError('Microphone access was refused — voice input is unavailable.')
+        h.onError('Microphone access was refused — voice input is unavailable. Please allow microphone permissions in your browser.')
       }
     }
     rec.onend = () => {
+      starting = false
       running = false
       diag.running = false
       touch()
@@ -785,7 +793,12 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     }
     try {
       rec.start()
-    } catch {
+    } catch (err: any) {
+      starting = false
+      if (err?.name === 'InvalidStateError') {
+        running = true
+        return
+      }
       running = false
       setTimeout(spin, 250)
     }
