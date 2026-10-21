@@ -4,6 +4,7 @@ import { Hud } from './ui/Hud'
 import { Boot } from './ui/Boot'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
+import { IronManHud } from './ui/IronManHud'
 import { useStore } from './store'
 import { startVoice, type Voice, type VoiceMode } from './lib/voice'
 import { createSpeaker, cycleVoice, currentVoiceName } from './lib/tts'
@@ -699,6 +700,19 @@ export default function App() {
     <>
       <Scene />
       <Hud />
+      {phase !== 'offline' && (
+        <IronManHud
+          onAsk={(question) => void respond(question)}
+          isListening={phase === 'listening'}
+          onToggleMic={() => {
+            if (phase === 'listening') {
+              goDormant()
+            } else {
+              listen(AWAIT_SPEECH_MS)
+            }
+          }}
+        />
+      )}
       <Boot />
       <Diagnostics />
       <Ignition onStart={() => void powerOn()} />

@@ -20,6 +20,8 @@ export type { ConnectionState } from './bridge'
  *            and can only use remote HTTP MCP servers.
  */
 
+import { askJarvisAi } from './jarvisAi'
+
 export const usingBridge = BACKEND === 'bridge'
 
 /** Conversation state lives in the bridge session, so history is only threaded
@@ -29,9 +31,26 @@ export async function ask(
   history: Msg[],
   handlers: AskHandlers,
 ): Promise<{ text: string; tools: string[] }> {
-  return usingBridge
-    ? bridge.ask(prompt, handlers)
-    : direct.ask([...history, { role: 'user', content: prompt }], handlers)
+  if (usingBridge) {
+    try {
+      const res = await bridge.ask(prompt, handlers)
+      if (res.text && res.text.toLowerCase().includes('not logged in')) {
+        console.warn('[jarvis] Bridge requires login — switching to Stark AI Engine')
+        return await askJarvisAi(prompt, handlers)
+      }
+      return res
+    } catch (err) {
+      console.warn('[jarvis] Bridge connection failed, utilizing Stark AI Engine:', err)
+      return await askJarvisAi(prompt, handlers)
+    }
+  }
+
+  try {
+    return await direct.ask([...history, { role: 'user', content: prompt }], handlers)
+  } catch (err) {
+    console.warn('[jarvis] Direct API failed, utilizing Stark AI Engine:', err)
+    return await askJarvisAi(prompt, handlers)
+  }
 }
 
 export async function warm(): Promise<void> {

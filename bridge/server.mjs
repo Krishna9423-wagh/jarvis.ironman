@@ -76,14 +76,19 @@ const isDevPort = (port) =>
 
 function originAllowed(origin) {
   if (!origin) return ALLOW_NO_ORIGIN
-  if (EXTRA_ORIGINS.has(origin.replace(/\/+$/, ''))) return true
+  const clean = origin.replace(/\/+$/, '')
+  if (EXTRA_ORIGINS.has(clean)) return true
   let url
   try {
     url = new URL(origin)
   } catch {
     return false
   }
-  if (url.protocol !== 'http:') return false
+  // Allow Vercel deployments
+  if (url.hostname === 'jarvis-ironman-bay.vercel.app' || url.hostname.endsWith('.vercel.app')) {
+    return true
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
   if (!LOCAL_HOSTS.has(url.hostname)) return false
   return isDevPort(Number(url.port))
 }
@@ -1343,6 +1348,9 @@ wss.on('connection', (socket) => {
             // nothing to say — the HUD stops spinning and JARVIS stands there
             // silent. Say what happened instead.
             if (msg.subtype === 'success') {
+              if (msg.result) {
+                sendTurn({ type: 'text', delta: msg.result })
+              }
               sendTurn({
                 type: 'done',
                 text: msg.result ?? '',

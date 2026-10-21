@@ -384,9 +384,11 @@ export async function ask(
     const finish = (fallback = '') => {
       if (done) return
       cleanup()
-      // Prefer the streamed text; fall back to the final result if this build
-      // didn't emit deltas.
-      resolve({ text: (text || fallback).trim(), tools })
+      const finalText = (text || fallback).trim()
+      if (!text && fallback) {
+        handlers.onText(fallback)
+      }
+      resolve({ text: finalText, tools })
     }
 
     const fail = (err: Error) => {

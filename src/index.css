@@ -1896,3 +1896,649 @@ kbd {
   transform: scaleX(-1);
   background: #000;
 }
+
+/* =========================================================================
+   IRON MAN HUD OVERLAY (MATCHING STARK INTERFACE PHOTO)
+   ========================================================================= */
+
+.ironman-hud-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  font-family: 'Chakra Petch', 'JetBrains Mono', monospace;
+  color: #00f0ff;
+  overflow: hidden;
+}
+
+.ironman-backdrop-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.08) 0%, transparent 65%),
+    radial-gradient(circle at 15% 15%, rgba(245, 158, 11, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(245, 158, 11, 0.06) 0%, transparent 40%);
+}
+
+/* Main Outer Amber Framing HUD Bracket */
+.hud-frame-container {
+  position: absolute;
+  inset: 22px;
+  border: 2px solid #f59e0b;
+  border-radius: 8px;
+  box-shadow: 
+    0 0 25px rgba(245, 158, 11, 0.35),
+    inset 0 0 30px rgba(0, 229, 255, 0.04);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hud-top-bracket {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 24px;
+}
+
+.bracket-notch-left,
+.bracket-notch-right {
+  position: absolute;
+  top: -2px;
+  width: 45px;
+  height: 6px;
+  background: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b;
+}
+.bracket-notch-left { left: 24px; }
+.bracket-notch-right { right: 24px; }
+
+.hud-header-center {
+  text-align: center;
+}
+
+.hud-main-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.38em;
+  color: #00f0ff;
+  text-shadow: 
+    0 0 12px #00e5ff,
+    0 0 35px rgba(0, 240, 255, 0.7);
+}
+
+.hud-sub-telemetry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: #94a3b8;
+}
+
+.dot-sep {
+  color: #f59e0b;
+  font-size: 8px;
+}
+
+.phase-indicator {
+  color: #22c55e;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+/* Telemetry Columns */
+.hud-col {
+  position: absolute;
+  top: 110px;
+  width: 270px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: auto;
+}
+
+.hud-col-left {
+  left: 28px;
+}
+
+.hud-col-right {
+  right: 28px;
+}
+
+/* Glassmorphism HUD Cards */
+.hud-card {
+  background: rgba(3, 14, 26, 0.78);
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 6px;
+  padding: 14px;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    inset 0 0 15px rgba(0, 240, 255, 0.05);
+  backdrop-filter: blur(8px);
+}
+
+.hud-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.hud-tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: #38bdf8;
+}
+
+.hud-subtag {
+  font-size: 9px;
+  color: #94a3b8;
+  letter-spacing: 0.12em;
+}
+
+.hud-live-tag {
+  font-size: 9px;
+  font-weight: 600;
+  color: #22c55e;
+  padding: 1px 6px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid #22c55e;
+  border-radius: 3px;
+  animation: pulseLive 2s infinite ease-in-out;
+}
+
+@keyframes pulseLive {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Diagnostic Lines */
+.diag-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.12em;
+}
+
+.diag-label {
+  color: #94a3b8;
+}
+
+.green-text {
+  color: #22c55e;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.cyan-text {
+  color: #00f0ff;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
+
+.amber-text {
+  color: #f59e0b;
+  text-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.dim-text {
+  color: #64748b;
+}
+
+/* Dual Gauges */
+.dual-gauges-card {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 12px;
+}
+
+.gauge-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gauge-circular {
+  position: relative;
+  width: 68px;
+  height: 68px;
+}
+
+.gauge-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.gauge-bg {
+  fill: none;
+  stroke: rgba(0, 240, 255, 0.12);
+  stroke-width: 4;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.energy-fill {
+  stroke: #00f0ff;
+  filter: drop-shadow(0 0 6px #00e5ff);
+}
+
+.armor-fill {
+  stroke: #f59e0b;
+  filter: drop-shadow(0 0 6px #f59e0b);
+}
+
+.gauge-percent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.05em;
+}
+
+.gauge-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #94a3b8;
+}
+
+/* Audio Waveform */
+.wave-display {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  padding: 4px;
+}
+
+.wave-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.wave-footer-telemetry {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 9px;
+  color: #64748b;
+  letter-spacing: 0.1em;
+}
+
+/* Center Holographic Reticle Overlays */
+.hud-center-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 460px;
+  height: 460px;
+  pointer-events: none;
+}
+
+.reactor-reticle-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ring-outer {
+  border: 1px dashed rgba(0, 240, 255, 0.45);
+  animation: slowClockwise 45s linear infinite;
+}
+
+.ring-segmented {
+  inset: 28px;
+  border: 2px solid transparent;
+  border-top-color: #f59e0b;
+  border-bottom-color: #f59e0b;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.6));
+  animation: counterClockwise 25s linear infinite;
+}
+
+.ring-inner-dashes {
+  inset: 56px;
+  border: 1px dotted rgba(0, 240, 255, 0.6);
+  animation: slowClockwise 30s linear infinite;
+}
+
+@keyframes slowClockwise {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes counterClockwise {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+.angle-tick {
+  position: absolute;
+  font-size: 9px;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.tick-0 { top: -14px; left: 50%; transform: translateX(-50%); }
+.tick-90 { right: -18px; top: 50%; transform: translateY(-50%); }
+.tick-180 { bottom: -14px; left: 50%; transform: translateX(-50%); }
+.tick-270 { left: -22px; top: 50%; transform: translateY(-50%); }
+
+.reactor-core-tag {
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 3px 10px;
+  background: rgba(3, 14, 26, 0.85);
+  border: 1px solid #00f0ff;
+  border-radius: 4px;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+}
+
+.reactor-core-lbl { color: #94a3b8; }
+.reactor-core-val { color: #f59e0b; font-weight: 600; }
+
+.hologram-pedestal-base {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  height: 60px;
+  pointer-events: none;
+}
+
+.pedestal-glow-beam {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at bottom, rgba(0, 240, 255, 0.4) 0%, transparent 70%);
+  filter: blur(10px);
+}
+
+.pedestal-disc {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 240, 255, 0.6);
+  background: rgba(0, 240, 255, 0.1);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+}
+
+/* Radar Scanner */
+.radar-screen {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  background: rgba(0, 10, 20, 0.65);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  overflow: hidden;
+}
+
+.radar-circle-1,
+.radar-circle-2 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+}
+.radar-circle-1 { width: 50px; height: 50px; }
+.radar-circle-2 { width: 100px; height: 100px; }
+
+.radar-sweep-beam {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  transform-origin: top left;
+  background: conic-gradient(from 0deg, rgba(0, 240, 255, 0.5) 0deg, transparent 65deg);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.radar-blip {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #22c55e;
+  animation: blipFade 2s infinite ease-out;
+}
+.blip-1 { top: 35%; left: 62%; animation-delay: 0.3s; }
+.blip-2 { top: 68%; left: 40%; animation-delay: 0.9s; }
+.blip-3 { top: 22%; left: 32%; animation-delay: 1.4s; }
+
+@keyframes blipFade {
+  0% { transform: scale(1.5); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.3; }
+}
+
+/* Flight Stats */
+.flight-stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.flight-item {
+  display: flex;
+  flex-direction: column;
+}
+.fl-label { font-size: 9px; color: #94a3b8; letter-spacing: 0.12em; }
+.fl-value { font-size: 13px; font-weight: 600; color: #00f0ff; letter-spacing: 0.08em; }
+
+/* Stability Wave */
+.stability-wave-container {
+  height: 42px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  padding: 4px;
+}
+.stability-svg { width: 100%; height: 100%; }
+.stability-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 8px;
+  color: #64748b;
+  letter-spacing: 0.12em;
+}
+
+/* Live Turn / Answer Display */
+.hud-live-turn-display {
+  position: absolute;
+  bottom: 125px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 86%);
+  pointer-events: auto;
+}
+
+.turn-box {
+  background: rgba(3, 14, 28, 0.92);
+  border: 1px solid #00f0ff;
+  border-radius: 6px;
+  padding: 14px 18px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.7),
+    0 0 25px rgba(0, 240, 255, 0.25);
+  backdrop-filter: blur(12px);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.turn-speaker-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: #f59e0b;
+  margin-bottom: 6px;
+}
+
+.turn-text-content {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #f8fafc;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+/* Bottom Command Bar */
+.hud-bottom-command-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.quick-commands-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.quick-chip {
+  background: rgba(4, 18, 34, 0.75);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #38bdf8;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  padding: 5px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-chip:hover {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.hud-input-form {
+  display: flex;
+  width: min(680px, 92%);
+  gap: 8px;
+  background: rgba(3, 14, 28, 0.85);
+  border: 1.5px solid rgba(0, 240, 255, 0.45);
+  border-radius: 26px;
+  padding: 4px 6px;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(0, 240, 255, 0.2);
+}
+
+.hud-mic-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #00f0ff;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 7px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hud-mic-btn:hover {
+  background: rgba(0, 240, 255, 0.25);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+}
+
+.hud-mic-btn.mic-active {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: #ef4444;
+  color: #f87171;
+  animation: pulseMic 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseMic {
+  0%, 100% { box-shadow: 0 0 8px #ef4444; }
+  50% { box-shadow: 0 0 18px #ef4444; }
+}
+
+.hud-text-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  padding: 0 10px;
+}
+
+.hud-text-input::placeholder {
+  color: rgba(148, 163, 184, 0.65);
+}
+
+.hud-send-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #00e5ff;
+  border: none;
+  color: #01060c;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 7px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hud-send-btn:hover {
+  background: #38bdf8;
+  box-shadow: 0 0 14px #00f0ff;
+  transform: scale(1.02);
+}
+
