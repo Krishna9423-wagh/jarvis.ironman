@@ -1,5 +1,12 @@
 """
-File and Folder Controller Tool (open_file_or_folder using Spotlight)
+File and Folder Controller Tools
+--------------------------------
+Features:
+- Find and open files using macOS Spotlight (`mdfind`)
+- Locate file paths for email attachments or inspection
+- Read text, code, or markdown files
+- Create documents and write code files
+- Summarize document contents
 """
 
 import os
@@ -9,61 +16,81 @@ from config import log_event
 
 EXCLUDE_PATTERNS = ["node_modules", ".git", ".cache", "Library", "site-packages"]
 
-def open_file_or_folder(name_or_query: str) -> str:
-    """
-    Find files or folders by name using macOS Spotlight (`mdfind`) and open the best match.
-    """
-    log_event("TOOL:OPEN_FILE", f"Searching for file/folder: '{name_or_query}'")
+def find_file_path(name_or_query: str) -> str:
+    """Locate full absolute path of a file on macOS using Spotlight."""
     query = name_or_query.strip()
-
-    # 1. Check if direct valid path
     expanded = Path(os.path.expanduser(query))
     if expanded.exists():
-        subprocess.run(["open", str(expanded)], check=False)
-        log_event("TOOL:OPEN_FILE", f"Opened direct path: {expanded}")
-        return f"Opened {expanded.name}, Sir."
+        return str(expanded.resolve())
 
-    # 2. Spotlight search
     home = os.path.expanduser("~")
     cmd = ["mdfind", "-onlyin", home, f"kMDItemFSName == '*{query}*'cd"]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
-
-        # Filter out noisy directories and ensure path exists
-        valid_paths = []
-        for p in lines:
-            if not any(exc in p for exc in EXCLUDE_PATTERNS) and os.path.exists(p):
-                valid_paths.append(p)
-
+        lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
+        valid_paths = [p for p in lines if not any(exc in p for exc in EXCLUDE_PATTERNS) and os.path.exists(p)]
+        
         if not valid_paths:
-            # Broader spotlight search
             res_broad = subprocess.run(["mdfind", query], capture_output=True, text=True, check=False)
             valid_paths = [
-                line.strip()
-                for line in res_broad.stdout.splitlines()
-                if line.strip() and not any(exc in line for exc in EXCLUDE_PATTERNS) and os.path.exists(line.strip())
+                l.strip() for l in res_broad.stdout.splitlines()
+                if l.strip() and not any(exc in l for exc in EXCLUDE_PATTERNS) and os.path.exists(l.strip())
             ]
 
         if valid_paths:
-            # Prefer user Documents, Desktop, Downloads over arbitrary code folders
-            def score_path(p: str) -> tuple[int, int]:
-                priority = 2
+            def score_path(p: str):
+                prio = 2
                 if "/Documents/" in p or "/Desktop/" in p or "/Downloads/" in p:
-                    priority = 0
+                    prio = 0
                 elif not any(c in p for c in ["node_modules", ".git", "venv"]):
-                    priority = 1
-                return (priority, len(p))
-
-            best_match = min(valid_paths, key=score_path)
-            subprocess.run(["open", best_match], check=False)
-            filename = Path(best_match).name
-            log_event("TOOL:OPEN_FILE", f"Spotlight matched: '{best_match}'")
-            return f"Found and opened '{filename}', Sir."
-        else:
-            log_event("TOOL:OPEN_FILE:ERROR", f"No file or folder matching '{query}' found.")
-            return f"I could not locate any file or folder named '{query}' on your Mac, Sir."
-
+                    prio = 1
+                return (prio, len(p))
+            return min(valid_paths, key=score_path)
     except Exception as e:
-        log_event("TOOL:OPEN_FILE:ERROR", f"Spotlight search error: {e}")
-        return f"Encountered an error searching for '{query}', Sir."
+        log_event("FILES:ERR", f"Spotlight search error: {e}")
+    return ""
+
+def open_file_or_folder(name_or_query: str) -> str:
+    """Find and open file or folder using macOS Spotlight."""
+    log_event("TOOL:OPEN_FILE", f"Searching for file/folder: '{name_or_query}'")
+    path = find_file_path(name_or_query)
+    if path and os.path.exists(path):
+        subprocess.run(["open", path], check=False)
+        log_event("TOOL:OPEN_FILE", f"Opened '{path}'")
+        return f"Found and opened '{Path(path).name}', Sir."
+    return f"I could not locate any file or folder named '{name_or_query}' on your Mac, Sir."
+
+def read_file_content(path: str) -> str:
+    """Read textual content of a file."""
+    full_path = find_file_path(path) or path
+    if not os.path.exists(full_path):
+        return f"File '{path}' does not exist, Sir."
+    try:
+        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read(4000)
+        return f"Content of '{Path(full_path).name}':\n{content}"
+    except Exception as e:
+        return f"Could not read file: {e}"
+
+def create_file(path: str, content: str) -> str:
+    """Create a new file with specified content."""
+    p = Path(os.path.expanduser(path))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        p.write_text(content, encoding="utf-8")
+        log_event("FILE:CREATE", f"Created file {p}")
+        return f"Successfully created file '{p.name}'."
+    except Exception as e:
+        return f"Failed to create file: {e}"
+
+def write_code_file(path: str, code: str) -> str:
+    """Write source code to a file."""
+    return create_file(path, code)
+
+def summarize_document(path: str) -> str:
+    """Read document and provide a concise summary."""
+    content = read_file_content(path)
+    if content.startswith("File '"):
+        return content
+    preview = content[:500] + ("..." if len(content) > 500 else "")
+    return f"Document summary for '{Path(path).name}':\n{preview}"

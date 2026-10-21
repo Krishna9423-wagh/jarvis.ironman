@@ -63,7 +63,31 @@ def set_timer(seconds: int, label: str = "Timer") -> str:
 def set_reminder(message: str, time_str: str = "5 minutes") -> str:
     """Set a reminder on macOS."""
     log_event("TOOL:REMINDER", f"Reminder: '{message}' in {time_str}")
-    # Display native macOS reminder notification
-    apple_script = f'display notification "{message}" with title "J.A.R.V.I.S. Reminder" subtitle "{time_str}"'
-    subprocess.run(["osascript", "-e", apple_script], check=False)
+    # Display native macOS reminder notification and create in Reminders.app
+    scpt = f"""
+    try
+        tell application "Reminders"
+            make new reminder with properties {{name:"{message}"}}
+        end tell
+    end try
+    display notification "{message}" with title "J.A.R.V.I.S. Reminder" subtitle "{time_str}"
+    """
+    subprocess.run(["osascript", "-e", scpt], check=False)
     return f"Reminder recorded for '{message}', Sir."
+
+def add_calendar_event(title: str, start_time: str = "tomorrow at 10:00 AM", notes: str = "") -> str:
+    """Schedule an event in macOS Calendar app."""
+    log_event("TOOL:CALENDAR", f"Event: '{title}' at {start_time}")
+    scpt = f"""
+    tell application "Calendar"
+        tell calendar "Calendar"
+            make new event with properties {{summary:"{title}", description:"{notes}"}}
+        end tell
+    end tell
+    """
+    try:
+        subprocess.run(["osascript", "-e", scpt], capture_output=True, text=True, check=False)
+        return f"Scheduled '{title}' in your Calendar, Sir."
+    except Exception as e:
+        return f"Calendar event noted for '{title}': {e}"
+

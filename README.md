@@ -53,39 +53,55 @@ language.
 
 ---
 
-## 🚀 Autonomous macOS Voice Assistant (`python3 main.py`)
+## 🚀 Autonomous macOS Agent (`python3 main.py`)
 
-J.A.R.V.I.S. now includes a general-purpose, native macOS voice assistant powered by Claude LLM tool-calling and natural language understanding across **English, Hindi, and Hinglish**.
+J.A.R.V.I.S. is a fully autonomous AI agent operating natively on macOS. Say anything in natural language across **English, Hindi, or Hinglish** — Jarvis decomposes the goal, plans multi-step tool calls, asks your permission for sensitive actions, and executes everything itself.
 
-### Features
-- 🎙️ **Natural Voice Input**: Real-time microphone capture with ambient noise calibration and automatic silence endpointing.
-- 🧠 **Claude LLM Tool Calling**: General system that understands any conversational request and decides which tools to invoke.
-- 💻 **Native App Control**: Opens any app (`WhatsApp`, `Instagram`, `Chrome`, `Spotify`, etc.) using `open -a` with fuzzy-matching and web fallback.
-- 📁 **Spotlight File Search**: *"open my resume"* finds and opens documents instantly using macOS Spotlight (`mdfind`).
-- 🔊 **System Telemetry**: Adjust volume (e.g. *"turn volume to 30"*), mute/unmute, screenshot, sleep, and lock screen.
-- 🛡️ **Safety Gating**: Destructive actions (file deletion, sudo, messages) always require verbal confirmation.
-- 📝 **Live Logging**: All turns, commands, and results are logged to `jarvis.log`.
+### Key Autonomous Capabilities
+- 🤖 **Multi-Step Agent Loop**: Rather than executing one-off commands, Jarvis maintains an iterative agent loop that reads tool outputs and decides subsequent actions dynamically.
+- 💬 **Mac Contacts & Ambiguity Resolution**: Resolves contact names directly from your macOS Contacts app. If ambiguous (e.g. *"Which Rahul? Found Rahul Pw and Rahul Sir Adypu"*), Jarvis stops and clarifies before drafting.
+- 📲 **Native Communications**: Sends WhatsApp messages, iMessages, emails with attachments (via Mail.app or SMTP), places FaceTime/WhatsApp calls, and opens Instagram DMs.
+- 🖥️ **Computer & Screen Control**: Full GUI automation via `pyautogui`, screenshot analysis, coordinate clicks, typing into external apps, and native app control (`open -a`).
+- 📁 **Spotlight Document Integration**: Finds resumes, PDFs, or code files across your Mac instantly and attaches or summarizes them.
+- 🧠 **Contextual Memory**: Follow-ups like *"send the same to Amit"* or *"now open it"* work seamlessly by preserving conversation state.
 
-### Setup & Run
-```bash
-# 1. Install Python requirements
-pip install -r requirements.txt
+### 🛡️ 3-Tier Permission System (`permissions.py`)
+| Tier | Trigger Policy | Actions Covered |
+| :--- | :--- | :--- |
+| **SAFE** | Executed immediately without asking | Opening apps, web search, YouTube, checking time/weather, adjusting volume, read-only file/system telemetry |
+| **ASK** | Read-back with verbal approval required ("Yes") | Sending WhatsApp/iMessage/Email/DMs, making calls, typing into apps, creating files, package installation |
+| **BLOCKED** | Prohibited unless user says *"Yes, I'm sure"* **twice** | Deleting files (`rm`, `trash`), `sudo` commands, payments, credential changes |
 
-# 2. Configure your API key
-cp .env.example .env
-# Edit .env and paste your ANTHROPIC_API_KEY (optional: also works with offline fallback)
-
-# 3. Launch J.A.R.V.I.S.
-python3 main.py
-```
+#### Interactive Approval & Voice Modification
+Before any **ASK** action, Jarvis reads back the full details:
+> *"I'll send this to Rahul on WhatsApp: 'I'll be late by 10 minutes.' Should I send it, Sir?"*
+- Say **"Yes"** / **"Send it"** -> Dispatches the message.
+- Say **"Change it to I'll be 20 minutes late"** -> Updates the draft and asks for approval.
+- Say **"Stop"** / **"Cancel"** -> Aborts immediately.
 
 ### macOS Permissions Required
 Enable in **System Settings > Privacy & Security**:
 - **Camera**: Allow Terminal / VS Code / Python (for Hand Gesture tracking)
 - **Accessibility**: Allow Terminal / VS Code / Python (for Mouse Control & Keystrokes)
 - **Microphone**: Allow Terminal / VS Code (for Voice Input)
-- **Automation**: Allow System Events
+- **Automation**: Allow System Events, Messages, Mail, Contacts
+- **Contacts**: Allow Terminal / VS Code / Python (for Contact Resolution)
 - **Screen Recording**: Allow Terminal / IDE (if taking screenshots)
+
+### Setup & Run
+```bash
+# 1. Install requirements
+pip install -r requirements.txt
+
+# 2. Launch full voice assistant & agent loop:
+python3 main.py
+
+# 3. Interactive CLI session (type or test without speaking):
+python3 main.py --cli
+
+# 4. Run automated agent verification test suite:
+python3 test_agent.py
+```
 
 ---
 

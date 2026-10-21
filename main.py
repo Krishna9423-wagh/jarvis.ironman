@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-J.A.R.V.I.S. Autonomous Voice Assistant for macOS
--------------------------------------------------
+J.A.R.V.I.S. Autonomous Agent for macOS
+---------------------------------------
 Features:
-- Natural Language Command Understanding (English, Hindi, Hinglish)
-- LLM Function Calling (Claude API / intelligent local engine)
-- macOS App, Browser, Spotlight File, Shell, and System Controls
-- Wake-word detection ("Jarvis") and Conversational Follow-up Loop
-- Ambient Noise Calibration & Resilient Error Retry
-- Safety confirmations for destructive actions
-- Real-time logging to `jarvis.log`
+- Multi-Step Autonomous Reasoning & Tool Execution (agent.py)
+- 3-Tier Permission System (SAFE, ASK, BLOCKED) (permissions.py)
+- Voice Confirmation & Modification Flow ("Should I send it?" -> "Yes" / "Change it")
+- Instant Voice Stop ("stop", "cancel", "ruko") and Keyboard Kill Switch (Ctrl+C / Esc)
+- WhatsApp, iMessage, Mail, FaceTime, Spotlight & Shell Control
+- Hand Gesture Module Integration (MediaPipe / OpenCV)
+- Ambient Noise Calibration & Resilient STT
+- Logging to jarvis.log
 """
 
 import sys
@@ -19,7 +20,7 @@ import subprocess
 import speech_recognition as sr
 from config import VOICE_NAME, WAKE_WORD, log_event
 from jarvis_voice import SoundDeviceMicrophone
-from llm import JarvisBrain
+from agent import JarvisAgent
 
 def speak(text: str):
     """Vocal output using macOS built-in UK English voice."""
@@ -32,17 +33,18 @@ def speak(text: str):
 
 def check_macos_permissions():
     """Print required macOS permissions banner."""
-    print("\n" + "=" * 65)
-    print("  J.A.R.V.I.S. // macOS Autonomous Voice Assistant")
-    print("=" * 65)
+    print("\n" + "=" * 68)
+    print("  J.A.R.V.I.S. // macOS Autonomous Voice Assistant & Agent")
+    print("=" * 68)
     print("\033[94m[REQUIRED MACOS PERMISSIONS]\033[0m")
     print("Enable the following in System Settings > Privacy & Security:")
-    print("  1. Camera            -> Toggle ON for Terminal / VS Code / Python (for Hand Gestures)")
-    print("  2. Accessibility     -> Toggle ON for Terminal / VS Code / Python (for Mouse Control & Keystrokes)")
-    print("  3. Microphone        -> Toggle ON for Terminal / VS Code (for Voice Input)")
-    print("  4. Automation        -> Toggle ON for System Events & AppleScript")
-    print("  5. Screen Recording  -> Toggle ON if taking screenshots")
-    print("=" * 65 + "\n")
+    print("  1. Camera            -> Toggle ON for Terminal / VS Code (Hand Gestures)")
+    print("  2. Accessibility     -> Toggle ON for Terminal / VS Code (Mouse Control & Keystrokes)")
+    print("  3. Microphone        -> Toggle ON for Terminal / VS Code (Voice Input)")
+    print("  4. Automation        -> Toggle ON for System Events, Messages, Mail, Contacts")
+    print("  5. Contacts          -> Toggle ON for Terminal / VS Code (Contact Resolution)")
+    print("  6. Screen Recording  -> Toggle ON if taking screenshots")
+    print("=" * 68 + "\n")
 
 def is_wake_word(text: str) -> bool:
     """Detect wake word variations (Jarvis, jarvisi, hey jarvis, etc.)."""
@@ -56,7 +58,7 @@ def strip_wake_word(text: str) -> str:
 
 def run_loop():
     check_macos_permissions()
-    brain = JarvisBrain()
+    agent = JarvisAgent()
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
 
@@ -73,10 +75,19 @@ def run_loop():
 
         while True:
             try:
-                prompt_label = "[JARVIS ACTIVE - LISTENING...]" if active_mode else "[WAITING FOR WAKE WORD: 'JARVIS'...]"
+                # If an action is waiting for user permission, keep active mode engaged
+                is_awaiting_approval = bool(agent.permissions.pending_action)
+                if is_awaiting_approval:
+                    active_mode = True
+
+                prompt_label = (
+                    "[AWAITING PERMISSION APPROVAL: 'YES' / 'CHANGE IT' / 'CANCEL']"
+                    if is_awaiting_approval
+                    else ("[JARVIS ACTIVE - LISTENING...]" if active_mode else "[WAITING FOR WAKE WORD: 'JARVIS'...]")
+                )
                 print(f"\n\033[96m{prompt_label}\033[0m")
 
-                timeout_val = 6.0 if active_mode else 10.0
+                timeout_val = 8.0 if active_mode else 10.0
                 audio = recognizer.listen(source, timeout=timeout_val, phrase_time_limit=8.0)
                 consecutive_timeouts = 0
 
@@ -87,14 +98,24 @@ def run_loop():
 
                 # Check wake word
                 wake_hit = is_wake_word(text)
-                if not active_mode and not wake_hit:
-                    # Ignore background chatter when not active and wake word was not spoken
+
+                # If waiting for permission or in active conversation, user doesn't need to repeat wake word
+                if not active_mode and not is_awaiting_approval and not wake_hit:
                     continue
 
                 command = strip_wake_word(text) if wake_hit else text
 
+                # Immediate Cancel check
+                if agent.permissions.is_cancel_phrase(command) and (active_mode or is_awaiting_approval):
+                    agent.reset_task()
+                    reply = "Task stopped, Sir. Standing down."
+                    print(f"\033[95m[JARVIS]:\033[0m {reply}")
+                    speak(reply)
+                    active_mode = False
+                    continue
+
                 if not command:
-                    # Bare wake word spoken ("Jarvis" or "hi jarvisi")
+                    # Bare wake word spoken ("Jarvis")
                     reply = "At your service, Sir. What would you like me to do?"
                     print(f"\033[95m[JARVIS]:\033[0m {reply}")
                     speak(reply)
@@ -104,13 +125,17 @@ def run_loop():
                 active_mode = True
                 print(f"\033[94m[PROCESSING]:\033[0m \"{command}\"")
 
-                # Process turn through LLM / Tool Dispatcher
-                reply = brain.process_turn(command)
+                # Multi-step Agent Reasoning & Permission Processing
+                reply = agent.process_turn(command)
                 print(f"\033[95m[JARVIS]:\033[0m {reply}")
                 speak(reply)
 
+                # If an action was just gated, stay active so user can say 'Yes'
+                if agent.permissions.pending_action:
+                    active_mode = True
+
             except sr.WaitTimeoutError:
-                if active_mode:
+                if active_mode and not agent.permissions.pending_action:
                     consecutive_timeouts += 1
                     if consecutive_timeouts >= 2:
                         active_mode = False
@@ -136,25 +161,38 @@ def run_loop():
 def run_single(query: str):
     """Direct single command test mode."""
     check_macos_permissions()
-    brain = JarvisBrain()
+    agent = JarvisAgent()
     print(f"\033[94m[COMMAND TEST]:\033[0m \"{query}\"")
-    reply = brain.process_turn(query)
+    reply = agent.process_turn(query)
     print(f"\033[95m[JARVIS RESULT]:\033[0m {reply}")
     speak(reply)
+
+def run_cli_session():
+    """Interactive text session for rapid testing of multi-step and permission flows."""
+    check_macos_permissions()
+    agent = JarvisAgent()
+    print("\n\033[92m[J.A.R.V.I.S. INTERACTIVE AGENT SESSION ONLINE]\033[0m")
+    print("Type your goals, confirmations ('yes'), modifications ('change it to...'), or 'exit':\n")
+    
+    while True:
+        try:
+            status_prompt = "You (Pending Approval)" if agent.permissions.pending_action else "You"
+            q = input(f"\033[96m{status_prompt}: \033[0m")
+            if q.lower() in ["exit", "quit", "q"]:
+                break
+            if not q.strip():
+                continue
+            res = agent.process_turn(q)
+            print(f"\033[95mJarvis: \033[0m{res}\n")
+            speak(res)
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting session.")
+            break
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "--cli":
-            brain = JarvisBrain()
-            print("Type your commands (or 'exit' to quit):")
-            while True:
-                try:
-                    q = input("\nYou: ")
-                    if q.lower() in ["exit", "quit", "q"]:
-                        break
-                    print("Jarvis:", brain.process_turn(q))
-                except (KeyboardInterrupt, EOFError):
-                    break
+            run_cli_session()
         else:
             run_single(" ".join(sys.argv[1:]))
     else:
