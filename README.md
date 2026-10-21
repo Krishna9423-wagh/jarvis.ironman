@@ -53,7 +53,42 @@ language.
 
 ---
 
-## Quick start
+## 🚀 Autonomous macOS Voice Assistant (`python3 main.py`)
+
+J.A.R.V.I.S. now includes a general-purpose, native macOS voice assistant powered by Claude LLM tool-calling and natural language understanding across **English, Hindi, and Hinglish**.
+
+### Features
+- 🎙️ **Natural Voice Input**: Real-time microphone capture with ambient noise calibration and automatic silence endpointing.
+- 🧠 **Claude LLM Tool Calling**: General system that understands any conversational request and decides which tools to invoke.
+- 💻 **Native App Control**: Opens any app (`WhatsApp`, `Instagram`, `Chrome`, `Spotify`, etc.) using `open -a` with fuzzy-matching and web fallback.
+- 📁 **Spotlight File Search**: *"open my resume"* finds and opens documents instantly using macOS Spotlight (`mdfind`).
+- 🔊 **System Telemetry**: Adjust volume (e.g. *"turn volume to 30"*), mute/unmute, screenshot, sleep, and lock screen.
+- 🛡️ **Safety Gating**: Destructive actions (file deletion, sudo, messages) always require verbal confirmation.
+- 📝 **Live Logging**: All turns, commands, and results are logged to `jarvis.log`.
+
+### Setup & Run
+```bash
+# 1. Install Python requirements
+pip install -r requirements.txt
+
+# 2. Configure your API key
+cp .env.example .env
+# Edit .env and paste your ANTHROPIC_API_KEY (optional: also works with offline fallback)
+
+# 3. Launch J.A.R.V.I.S.
+python3 main.py
+```
+
+### macOS Permissions Required
+Enable in **System Settings > Privacy & Security**:
+- **Microphone**: Allow Terminal / IDE
+- **Accessibility**: Allow Terminal / IDE (for keystroke simulation)
+- **Automation**: Allow System Events
+- **Screen Recording**: Allow Terminal / IDE (if taking screenshots)
+
+---
+
+## 🌐 Web Interface Quick Start
 
 First, install, then start it:
 
