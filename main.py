@@ -37,10 +37,11 @@ def check_macos_permissions():
     print("=" * 65)
     print("\033[94m[REQUIRED MACOS PERMISSIONS]\033[0m")
     print("Enable the following in System Settings > Privacy & Security:")
-    print("  1. Microphone        -> Toggle ON for Terminal / IDE")
-    print("  2. Accessibility     -> Toggle ON for Terminal / IDE (for keystrokes & typing)")
-    print("  3. Automation        -> Toggle ON for System Events & AppleScript")
-    print("  4. Screen Recording  -> Toggle ON if taking screenshots")
+    print("  1. Camera            -> Toggle ON for Terminal / VS Code / Python (for Hand Gestures)")
+    print("  2. Accessibility     -> Toggle ON for Terminal / VS Code / Python (for Mouse Control & Keystrokes)")
+    print("  3. Microphone        -> Toggle ON for Terminal / VS Code (for Voice Input)")
+    print("  4. Automation        -> Toggle ON for System Events & AppleScript")
+    print("  5. Screen Recording  -> Toggle ON if taking screenshots")
     print("=" * 65 + "\n")
 
 def is_wake_word(text: str) -> bool:

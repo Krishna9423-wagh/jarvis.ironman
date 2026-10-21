@@ -1,0 +1,91 @@
+{
+  "settings": {
+    "camera_index": 0,
+    "frame_width": 640,
+    "frame_height": 480,
+    "target_fps": 30,
+    "mirror_camera": true,
+    "landmark_smoothing_alpha": 0.5,
+    "mouse_smoothing_alpha": 0.4,
+    "debounce_frames": 8,
+    "cooldown_seconds": 1.0,
+    "wake_hold_seconds": 1.0,
+    "min_detection_confidence": 0.7,
+    "min_tracking_confidence": 0.7,
+    "min_hand_size_ratio": 0.08,
+    "edge_margin": 0.03,
+    "mouse_active_box": {
+      "x_min": 0.20,
+      "x_max": 0.80,
+      "y_min": 0.20,
+      "y_max": 0.80
+    }
+  },
+  "gestures": {
+    "open_palm": {
+      "name": "Open Palm",
+      "fingers": [1, 1, 1, 1, 1],
+      "action": "pause_listening",
+      "description": "Pause or stop listening / hold speech",
+      "spoken_feedback": "Listening paused, Sir."
+    },
+    "fist": {
+      "name": "Fist",
+      "fingers": [0, 0, 0, 0, 0],
+      "action": "mute_media",
+      "description": "Mute audio or stop media playback",
+      "spoken_feedback": "Muting audio, Sir."
+    },
+    "index_up": {
+      "name": "Index Up",
+      "fingers": [0, 1, 0, 0, 0],
+      "action": "move_mouse",
+      "description": "Move mouse cursor smoothly across active box",
+      "spoken_feedback": ""
+    },
+    "pinch": {
+      "name": "Pinch",
+      "pinch_threshold": 0.28,
+      "action": "mouse_click",
+      "description": "Index + thumb pinch to click mouse",
+      "spoken_feedback": ""
+    },
+    "peace": {
+      "name": "Peace Sign",
+      "fingers": [0, 1, 1, 0, 0],
+      "action": "scroll_down",
+      "description": "Two fingers extended to scroll down / next",
+      "spoken_feedback": ""
+    },
+    "thumbs_up": {
+      "name": "Thumbs Up",
+      "action": "confirm",
+      "description": "Confirm or respond 'yes'",
+      "spoken_feedback": "Confirmed, Sir."
+    },
+    "thumbs_down": {
+      "name": "Thumbs Down",
+      "action": "cancel",
+      "description": "Cancel or respond 'no'",
+      "spoken_feedback": "Cancelled, Sir."
+    },
+    "swipe_left": {
+      "name": "Swipe Left",
+      "action": "previous",
+      "description": "Wrist rapid motion to the left",
+      "spoken_feedback": "Previous, Sir."
+    },
+    "swipe_right": {
+      "name": "Swipe Right",
+      "action": "next",
+      "description": "Wrist rapid motion to the right",
+      "spoken_feedback": "Next, Sir."
+    },
+    "wake_palm": {
+      "name": "Wake Palm",
+      "action": "wake_jarvis",
+      "description": "Show open palm steadily for 1 second to activate Jarvis gesture control",
+      "spoken_feedback": "Jarvis gesture control online, Sir."
+    }
+  }
+}

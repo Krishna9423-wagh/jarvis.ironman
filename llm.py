@@ -80,6 +80,17 @@ class JarvisBrain:
         if ("close it" in q or "band karo" in q or "close that" in q) and self.last_target_app:
             return self.execute_tool_call("close_app", {"name": self.last_target_app})
 
+        # Gesture Control Commands
+        if any(p in q for p in ["start gesture", "gesture control on", "gesture on", "gesture shuru", "enable gesture"]):
+            show_debug = "debug" in q or "window" in q or "camera" in q
+            return self.execute_tool_call("start_gesture_control", {"show_debug": show_debug})
+
+        if any(p in q for p in ["stop gesture", "gesture control off", "gesture off", "gesture band", "disable gesture"]):
+            return self.execute_tool_call("stop_gesture_control", {})
+
+        if any(p in q for p in ["toggle gesture debug", "gesture debug", "show gesture window"]):
+            return self.execute_tool_call("toggle_gesture_debug", {})
+
         # 1. YouTube
         if "youtube" in q or "you tube" in q:
             yt_query = re.sub(

@@ -10,6 +10,7 @@ from tools.shell import run_shell
 from tools.keystrokes import type_text, press_keys
 from tools.whatsapp import send_whatsapp_message
 from tools.productivity import tell_time, tell_date, get_weather, set_timer, set_reminder
+from tools.gestures import start_gesture_control, stop_gesture_control, toggle_gesture_debug
 
 # Direct execution dispatch map
 DISPATCH_MAP = {
@@ -29,6 +30,9 @@ DISPATCH_MAP = {
     "get_weather": get_weather,
     "set_timer": set_timer,
     "set_reminder": set_reminder,
+    "start_gesture_control": start_gesture_control,
+    "stop_gesture_control": stop_gesture_control,
+    "toggle_gesture_debug": toggle_gesture_debug,
 }
 
 # Anthropic Claude Tool Calling Specifications
@@ -204,5 +208,20 @@ CLAUDE_TOOLS = [
             },
             "required": ["message"]
         }
+    },
+    {
+        "name": "start_gesture_control",
+        "description": "Start or activate the MediaPipe hand gesture control system on macOS. Supports camera debug window.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "show_debug": {"type": "boolean", "description": "Whether to open the OpenCV debug window."}
+            }
+        }
+    },
+    {
+        "name": "stop_gesture_control",
+        "description": "Stop or deactivate the MediaPipe hand gesture control system.",
+        "input_schema": {"type": "object", "properties": {}}
     }
 ]

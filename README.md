@@ -81,10 +81,60 @@ python3 main.py
 
 ### macOS Permissions Required
 Enable in **System Settings > Privacy & Security**:
-- **Microphone**: Allow Terminal / IDE
-- **Accessibility**: Allow Terminal / IDE (for keystroke simulation)
+- **Camera**: Allow Terminal / VS Code / Python (for Hand Gesture tracking)
+- **Accessibility**: Allow Terminal / VS Code / Python (for Mouse Control & Keystrokes)
+- **Microphone**: Allow Terminal / VS Code (for Voice Input)
 - **Automation**: Allow System Events
 - **Screen Recording**: Allow Terminal / IDE (if taking screenshots)
+
+---
+
+## ✋ High-Precision Hand Gesture Control
+
+J.A.R.V.I.S. includes a rebuilt, zero-lag Python MediaPipe hand gesture engine running in a separate thread.
+
+### Quick Start
+```bash
+# Run gesture detector directly with live OpenCV debug HUD:
+python3 gesture_detector.py
+
+# Or run comprehensive unit tests & rotation tolerance suite:
+python3 test_gestures.py
+```
+
+### Voice Commands to Control Gestures
+Say to Jarvis:
+- *"Jarvis, start gesture control"* (or *"start gesture control with camera"*)
+- *"Jarvis, stop gesture control"*
+- *"Jarvis, toggle gesture debug"*
+
+### Supported Gestures (`gestures.json`)
+| Gesture | Landmark Logic | Action | Spoken Confirmation |
+| :--- | :--- | :--- | :--- |
+| **Wake Palm** | Open palm held steadily for 1.0s | Wakes & enables gesture control | *"Jarvis gesture control online, Sir."* |
+| **Open Palm** | 5 fingers extended | Pause / stop listening | *"Listening paused, Sir."* |
+| **Fist** | All fingers curled into ball | Mute audio / stop media | *"Muting audio, Sir."* |
+| **Index Up** | Index extended, others curled | Move mouse pointer smoothly | Cursor tracked via active box |
+| **Pinch** | Thumb & Index tip touching | Mouse click (`pyautogui.click()`) | Click executed |
+| **Peace Sign** | Index & Middle extended | Scroll down | Page scrolled down |
+| **Thumbs Up** | Thumb up, 4 fingers curled | Confirm / "Yes" | *"Confirmed, Sir."* |
+| **Thumbs Down**| Thumb down, 4 fingers curled | Cancel / "No" | *"Cancelled, Sir."* |
+| **Swipe Left** | Rapid wrist displacement left | Previous track / back | *"Previous, Sir."* |
+| **Swipe Right**| Rapid wrist displacement right | Next track / forward | *"Next, Sir."* |
+
+### Anti-False-Trigger & Stability Features
+1. **Exponential Moving Average (EMA)**: $\alpha = 0.5$ on all 21 landmarks eliminates sensor jitter without adding perceptible lag.
+2. **Rotation-Tolerant Math**: Calculates Euclidean distance from Wrist (landmark 0) instead of raw y-coordinates, keeping gestures reliable when your hand tilts up to 60°.
+3. **Handedness-Aware Thumb**: Checks lateral motion relative to MCP joints and palm vector in a mirrored frame.
+4. **8-Frame Debounce & 1.0s Cooldown**: Discrete gestures must hold for 8 consecutive frames before firing, with a 1-second cooldown preventing double triggers.
+5. **Mouse Active Box**: Index fingertip within a central 20%–80% sub-rectangle maps to the full macOS desktop, eliminating arm fatigue.
+6. **Debug HUD**: Press **`d`** anytime in the OpenCV window to toggle the visualizer.
+
+### Calibration & Best Practice Tips
+- **Lighting**: Ensure even, frontal or overhead lighting. Avoid strong backlights (e.g., sitting directly in front of a bright window).
+- **Distance**: Sit 1.5 to 3 feet (0.5m – 1m) from your webcam so your hand occupies roughly 15%–35% of the frame.
+- **Background**: Avoid complex backgrounds with skin-toned clutter or moving fans.
+- **Hand Orientation**: Keep your palm facing toward the webcam for maximum landmark confidence.
 
 ---
 
