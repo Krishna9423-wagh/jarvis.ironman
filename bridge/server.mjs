@@ -1348,14 +1348,23 @@ wss.on('connection', (socket) => {
             // nothing to say — the HUD stops spinning and JARVIS stands there
             // silent. Say what happened instead.
             if (msg.subtype === 'success') {
-              if (msg.result) {
-                sendTurn({ type: 'text', delta: msg.result })
+              const resText = msg.result ?? ''
+              if (resText.toLowerCase().includes('not logged in') || resText.toLowerCase().includes('/login')) {
+                // Claude Code is unauthenticated. Do not output error text to client.
+                sendTurn({
+                  type: 'unauthenticated',
+                  reason: 'login_required',
+                })
+              } else {
+                if (resText) {
+                  sendTurn({ type: 'text', delta: resText })
+                }
+                sendTurn({
+                  type: 'done',
+                  text: resText,
+                  costUsd: msg.total_cost_usd ?? null,
+                })
               }
-              sendTurn({
-                type: 'done',
-                text: msg.result ?? '',
-                costUsd: msg.total_cost_usd ?? null,
-              })
             } else {
               console.error(
                 `[jarvis] turn failed: ${msg.subtype}`,

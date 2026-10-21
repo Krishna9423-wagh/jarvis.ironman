@@ -432,6 +432,9 @@ export async function ask(
       try {
         switch (msg.type) {
           case 'text':
+            if (msg.delta && (msg.delta.toLowerCase().includes('not logged in') || msg.delta.toLowerCase().includes('/login'))) {
+              break
+            }
             text += msg.delta ?? ''
             handlers.onText(msg.delta ?? '')
             break
@@ -442,7 +445,15 @@ export async function ask(
             handlers.onTool(prettyToolName(msg.name))
             break
 
+          case 'unauthenticated':
+            fail(new Error('unauthenticated'))
+            break
+
           case 'done':
+            if (msg.text && (msg.text.toLowerCase().includes('not logged in') || msg.text.toLowerCase().includes('/login'))) {
+              fail(new Error('unauthenticated'))
+              break
+            }
             finish(msg.text ?? '')
             break
 

@@ -7,12 +7,22 @@ interface IronManHudProps {
   onToggleMic: () => void
 }
 
+function cleanJarvisText(raw: string): string {
+  if (!raw) return ''
+  return raw
+    .replace(/Not logged in\s*·?\s*Please run \/login/gi, '')
+    .replace(/^Analyzing query:\s*["'][^"']*["']\.\s*/gi, '')
+    .trim()
+}
+
 export const IronManHud: React.FC<IronManHudProps> = ({ onAsk, isListening, onToggleMic }) => {
   const phase = useStore((s) => s.phase)
   const turns = useStore((s) => s.turns)
   const [inputText, setInputText] = useState('')
   const [radarAngle, setRadarAngle] = useState(0)
   const [waveOffset, setWaveOffset] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('jarvis_gemini_key') || '')
 
   // Animated radar rotation and audio wave oscillation
   useEffect(() => {
@@ -33,9 +43,19 @@ export const IronManHud: React.FC<IronManHudProps> = ({ onAsk, isListening, onTo
     setInputText('')
   }
 
-  // Get the latest turn for live display
-  const latestTurn = turns.length > 0 ? turns[turns.length - 1] : null
+  const saveSettings = () => {
+    if (geminiKey.trim()) {
+      localStorage.setItem('jarvis_gemini_key', geminiKey.trim())
+    } else {
+      localStorage.removeItem('jarvis_gemini_key')
+    }
+    setShowSettings(false)
+  }
+
+  // Get the latest user turn and latest jarvis turn
+  const latestUser = [...turns].reverse().find((t) => t.role === 'user')
   const latestJarvis = [...turns].reverse().find((t) => t.role === 'jarvis')
+  const cleanedJarvis = latestJarvis ? cleanJarvisText(latestJarvis.text) : ''
 
   return (
     <div className="ironman-hud-overlay">
@@ -57,6 +77,14 @@ export const IronManHud: React.FC<IronManHudProps> = ({ onAsk, isListening, onTo
               <span>TACTICAL HUD</span>
             </div>
           </div>
+          <button
+            type="button"
+            className="hud-settings-btn"
+            onClick={() => setShowSettings((s) => !s)}
+            title="AI Core Configuration"
+          >
+            ⚙ AI CORE
+          </button>
           <div className="bracket-notch-right" />
         </div>
 
@@ -271,14 +299,59 @@ export const IronManHud: React.FC<IronManHudProps> = ({ onAsk, isListening, onTo
         </div>
 
         {/* Live Conversation Display (Question & Answer) */}
-        {latestTurn && (
+        {(latestUser || cleanedJarvis) && (
           <div className="hud-live-turn-display">
             <div className="turn-box">
-              <div className="turn-speaker-badge">
-                {latestTurn.role === 'user' ? 'YOU (VOICE/INPUT)' : 'J.A.R.V.I.S.'}
+              {latestUser && (
+                <div className="turn-user-row">
+                  <span className="turn-user-tag">YOU:</span>
+                  <span className="turn-user-text">{latestUser.text}</span>
+                </div>
+              )}
+              {cleanedJarvis && (
+                <div className="turn-jarvis-row">
+                  <span className="turn-speaker-badge">J.A.R.V.I.S.:</span>
+                  <div className="turn-text-content">{cleanedJarvis}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Settings Modal */}
+        {showSettings && (
+          <div className="hud-modal-backdrop" onClick={() => setShowSettings(false)}>
+            <div className="hud-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="hud-card-header">
+                <span className="hud-tag">AI CORE CONFIGURATION</span>
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={() => setShowSettings(false)}
+                >
+                  ✕
+                </button>
               </div>
-              <div className="turn-text-content">
-                {latestJarvis ? latestJarvis.text : latestTurn.text}
+              <div className="modal-body">
+                <p className="modal-desc">
+                  JARVIS is actively running with the <strong>Stark Autonomous Intelligence Engine</strong>. 
+                  All telemetry, speech recognition, and instant Wikipedia knowledge lookups are fully active.
+                </p>
+                <div className="modal-field">
+                  <label className="modal-label">Google Gemini API Key (Optional):</label>
+                  <input
+                    type="password"
+                    className="modal-input"
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="Enter AI Studio key for unbounded AI intelligence..."
+                  />
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="modal-save-btn" onClick={saveSettings}>
+                    SAVE CONFIGURATION
+                  </button>
+                </div>
               </div>
             </div>
           </div>
