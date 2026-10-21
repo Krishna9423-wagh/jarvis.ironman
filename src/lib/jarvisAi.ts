@@ -83,6 +83,61 @@ async function getSmartResponse(rawPrompt: string): Promise<string> {
     return `To connect Claude Code to the bridge, simply run "npm install -g @anthropic-ai/claude-code" in your terminal and type "claude" once to log in. In the meantime, I am running autonomously on my internal neural engine with full vocal and holographic telemetry, Sir.`
   }
 
+  // 1.5. App and Website Launching (WhatsApp, Instagram, YouTube, Chrome, Spotify)
+  if (
+    q.includes('whatsapp') ||
+    q.includes('whats up') ||
+    q.includes('instagram') ||
+    q.includes('insta') ||
+    q.includes('youtube') ||
+    q.includes('chrome') ||
+    q.includes('spotify') ||
+    q.startsWith('open ') ||
+    q.startsWith('launch ') ||
+    q.includes('kholo')
+  ) {
+    let target = ''
+    let appLabel = ''
+    let webFallback = ''
+
+    if (q.includes('whatsapp') || q.includes('whats up') || q.includes('watsapp')) {
+      target = 'whatsapp'
+      appLabel = 'WhatsApp'
+      webFallback = 'https://web.whatsapp.com'
+    } else if (q.includes('instagram') || q.includes('insta')) {
+      target = 'instagram'
+      appLabel = 'Instagram'
+      webFallback = 'https://www.instagram.com'
+    } else if (q.includes('youtube') || q.includes('yt')) {
+      target = 'youtube'
+      appLabel = 'YouTube'
+      webFallback = 'https://www.youtube.com'
+    } else if (q.includes('chrome')) {
+      target = 'chrome'
+      appLabel = 'Google Chrome'
+      webFallback = 'https://www.google.com'
+    } else if (q.includes('spotify')) {
+      target = 'spotify'
+      appLabel = 'Spotify'
+      webFallback = 'https://open.spotify.com'
+    }
+
+    if (target) {
+      // Trigger bridge backend to open native app on macOS
+      fetch('http://localhost:8787/open', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target }),
+      }).catch(() => {
+        if (webFallback && typeof window !== 'undefined') {
+          window.open(webFallback, '_blank')
+        }
+      })
+
+      return `Opening ${appLabel} now, Sir.`
+    }
+  }
+
   // 2. Status & Diagnostics
   if (
     q.includes('status') ||

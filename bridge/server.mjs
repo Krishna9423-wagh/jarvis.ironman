@@ -966,6 +966,45 @@ const handleRequest = async (req, res) => {
     }
   }
 
+  // Application & Website launcher endpoint
+  if (req.method === 'POST' && req.url === '/open') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const { target } = JSON.parse(body || '{}')
+      const targetLower = String(target || '').toLowerCase().trim()
+      let msg = ''
+      const { exec } = await import('node:child_process')
+
+      if (targetLower.includes('whatsapp') || targetLower.includes('whats up')) {
+        exec('open -a WhatsApp || open https://web.whatsapp.com')
+        msg = 'Opening WhatsApp, Sir.'
+      } else if (targetLower.includes('instagram') || targetLower.includes('insta')) {
+        exec('open -a Instagram || open https://www.instagram.com')
+        msg = 'Opening Instagram, Sir.'
+      } else if (targetLower.includes('youtube')) {
+        exec('open https://www.youtube.com')
+        msg = 'Opening YouTube, Sir.'
+      } else if (targetLower.includes('chrome')) {
+        exec('open -a "Google Chrome"')
+        msg = 'Opening Google Chrome, Sir.'
+      } else if (targetLower.includes('spotify')) {
+        exec('open -a Spotify || open https://open.spotify.com')
+        msg = 'Opening Spotify, Sir.'
+      } else {
+        exec(`open -a "${target}" || open "https://${target}.com"`)
+        msg = `Launching ${target}, Sir.`
+      }
+
+      console.log(`[jarvis bridge open]: ${target} -> ${msg}`)
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ok: true, message: msg }))
+    } catch (e) {
+      res.writeHead(500, cors)
+      return res.end(JSON.stringify({ ok: false, error: String(e) }))
+    }
+  }
+
   res.writeHead(404, cors)
   res.end()
 }
