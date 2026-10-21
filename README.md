@@ -1,17 +1,30 @@
-# J.A.R.V.I.S.
+# J.A.R.V.I.S. — Iron Man Holographic AI Assistant
 
-A browser voice assistant with an Iron Man holographic interface. Say
-**"Hey Jarvis"**, he wakes, listens, and does real things through your tools —
-searches the web, generates images, drives your phone, reads your mail. The face
-is a web page (React + Vite + Three.js + custom GLSL). The brain is Claude Code,
-run headless as a library.
+<p align="center">
+  <img src="assets/jarvis-hud-preview.jpg" alt="J.A.R.V.I.S. Iron Man Interface" width="100%" />
+</p>
 
-**The only subscription you need is Claude Code.** No API keys, no OpenAI
-account, no cloud bill — the brain runs on your existing Claude Code login, and
-the heavy work (the model itself) runs on Anthropic's servers, so even a low-end
-laptop only has to draw the interface. **ElevenLabs is an optional add-on** that
-gives JARVIS a much better voice and sharper hearing; without it he speaks and
-listens through the browser's own speech, and everything still works.
+<p align="center">
+  <a href="https://jarvis-ironman-bay.vercel.app/"><img src="https://img.shields.io/badge/Live%20Demo-jarvis--ironman--bay.vercel.app-00f0ff?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo" /></a>
+  <img src="https://img.shields.io/badge/Interface-Three.js%20%7C%20GLSL%20%7C%20React-cyan?style=for-the-badge" alt="Tech" />
+  <img src="https://img.shields.io/badge/License-MIT-orange?style=for-the-badge" alt="License" />
+</p>
+
+### 🌐 Live Web Demo
+Experience the interactive holographic interface directly in your browser:  
+👉 **[https://jarvis-ironman-bay.vercel.app/](https://jarvis-ironman-bay.vercel.app/)**
+
+---
+
+## ⚡ Overview
+
+A browser-based voice assistant built with an authentic **Iron Man holographic HUD interface**. Say **"Hey Jarvis"**, and he wakes, listens, and performs real-world actions across connected tools — searching the web, generating images, controlling browsers, and processing live computer vision telemetry.
+
+- **The Holographic Face**: React + Vite + Three.js + custom GLSL shaders rendering an interactive Arc Reactor, telemetry blades, and MediaPipe hand tracking.
+- **The Brain**: Claude Agent SDK running headless locally with full MCP tool support.
+- **Voice Stack**: Local Voice Activity Detection (VAD) + Picovoice wake word engine + browser speech & ElevenLabs integration.
+
+**The only subscription you need is Claude Code.** No API keys, no OpenAI account, no cloud bill — the brain runs on your existing Claude Code login, and the heavy work runs on Anthropic's servers, so even a lightweight laptop only has to draw the interface. **ElevenLabs is an optional add-on** that gives JARVIS a much better voice and sharper hearing; without it he speaks and listens through the browser's own speech, and everything still works.
 
 ---
 
