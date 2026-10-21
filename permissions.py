@@ -43,6 +43,7 @@ TOOL_TIER_MAP = {
     "start_gesture_control": PermissionTier.SAFE,
     "stop_gesture_control": PermissionTier.SAFE,
     "toggle_gesture_debug": PermissionTier.SAFE,
+    "open_gesture_hud": PermissionTier.SAFE,
     "resolve_contact": PermissionTier.SAFE,
 
     # ASK Tools (Direct communications, system mutations, typing)

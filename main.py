@@ -193,7 +193,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "--cli":
             run_cli_session()
+        elif sys.argv[1] in ["--hud", "--gui", "-g"]:
+            from ui.hud_window import launch_gesture_hud
+            launch_gesture_hud()
         else:
             run_single(" ".join(sys.argv[1:]))
     else:
         run_loop()
+

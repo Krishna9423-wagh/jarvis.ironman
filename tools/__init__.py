@@ -13,7 +13,7 @@ from tools.keystrokes import type_text, press_keys
 from tools.communication import send_whatsapp, send_imessage, send_email, make_call, send_instagram_dm, resolve_contact
 from tools.screen import take_screenshot, click_screen, type_on_screen, press_key
 from tools.productivity import tell_time, tell_date, get_weather, set_timer, set_reminder, add_calendar_event
-from tools.gestures import start_gesture_control, stop_gesture_control, toggle_gesture_debug
+from tools.gestures import start_gesture_control, stop_gesture_control, toggle_gesture_debug, open_gesture_hud
 
 # Direct execution dispatch map
 DISPATCH_MAP = {
@@ -64,6 +64,7 @@ DISPATCH_MAP = {
     "start_gesture_control": start_gesture_control,
     "stop_gesture_control": stop_gesture_control,
     "toggle_gesture_debug": toggle_gesture_debug,
+    "open_gesture_hud": open_gesture_hud,
 }
 
 # Anthropic Claude Tool Calling Specifications
@@ -367,6 +368,11 @@ CLAUDE_TOOLS = [
     {
         "name": "stop_gesture_control",
         "description": "Stop hand gesture control.",
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "open_gesture_hud",
+        "description": "Open or display the futuristic Iron Man HUD PyQt6 gesture control window.",
         "input_schema": {"type": "object", "properties": {}}
     }
 ]

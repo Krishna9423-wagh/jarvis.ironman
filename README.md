@@ -154,6 +154,71 @@ Say to Jarvis:
 
 ---
 
+## 🎛️ Futuristic Iron Man HUD Gesture Interface (PyQt6)
+
+<p align="center">
+  <img src="assets/hud_screenshot.png" alt="J.A.R.V.I.S. Iron Man HUD Gesture Interface" width="100%" />
+</p>
+
+J.A.R.V.I.S. features a dedicated, native **Iron Man HUD-inspired desktop GUI** built with **PyQt6** and hardware-accelerated QPainter graphics. Designed to feel like Tony Stark's holographic lab console, the interface connects directly to the background MediaPipe gesture thread and macOS voice assistant.
+
+### 🚀 Why PyQt6 Native Desktop GUI?
+1. **Zero-Lag In-Memory Pipeline**: Bypasses browser WebSocket serialization and IPC hops. Direct Qt Signal/Slot streaming between MediaPipe's worker thread and the UI delivers consistent 30+ FPS camera telemetry and 60 FPS UI animations.
+2. **True System-Wide Control & Always-on-Top Floating Mode**: Supports a compact floating picture-in-picture HUD mode (`C` hotkey) with `WindowStaysOnTopHint` so you can control your Mac while browsing, coding, or watching videos.
+3. **No Browser Security Roadblocks**: Native access to webcams, accessibility input, and sound synthesis without browser microphone/camera permission modal traps.
+4. **Instant Hotkey Controls**: Responsive global keybindings (`G`, `D`, `C`, `Esc`) directly bound to Qt event loop.
+
+### 🕹️ How to Launch
+```bash
+# Launch via main entrypoint:
+python3 main.py --hud
+
+# Or run the HUD module directly:
+python3 ui/hud_window.py
+
+# Run automated HUD verification & screenshot suite:
+python3 test_hud_ui.py
+```
+> **Voice Activation**: You can also ask Jarvis: *"Jarvis, start gesture control"* or *"Jarvis, open gesture panel"*.
+
+### 🖥️ HUD Layout Architecture
+- **Center Camera Viewport**:
+  - Live 640x480 mirrored webcam stream inside a rounded cyber-frame.
+  - Electric cyan HUD corner brackets and an animated vertical scanning-line beam.
+  - All 21 MediaPipe hand landmarks rendered as glowing cyan nodes connected by electric-blue bones.
+  - Active mouse control zone overlay (20%–80% sub-rectangle).
+  - Expanding shockwave ripple animation whenever a gesture action triggers.
+- **Right Panel ("Gesture Control")**:
+  - High-visibility icon and name of the currently detected gesture.
+  - Custom circular confidence ring that smoothly fills as a pose is held (visualizing the 8-frame debounce progress).
+  - Target system action preview and colored state pill (**Grey** = searching, **Yellow** = holding steady, **Green** = action executed).
+- **Left Panel ("Gesture Guide")**:
+  - Full catalog of all 10 supported gestures with cyber-themed icons, descriptions, and assigned actions.
+  - Real-time active pose highlight that illuminates the corresponding guide item when your hand strikes a matching pose.
+- **Bottom Bar & Telemetry**:
+  - Live status chips: **GESTURE ON/OFF**, **VOICE LISTENING**, **CAMERA FPS**, and **HAND TRACKING STATUS**.
+  - Live action event marquee displaying recent triggered commands with timestamps.
+  - Instant ON/OFF gesture toggle button.
+- **Stark Arc Reactor Core**:
+  - Multi-ring concentric rotating orb in the top-left corner.
+  - Rotates continuously with breathing luminosity pulses and dynamically shifts color: **Electric Cyan** when idle/listening, **Vibrant Green** when gesture locked, and **Amber Gold** during speech/action.
+- **Slide-Out Settings Drawer**:
+  - Adjustable sensitivity slider, action cooldown timer, camera device index selector, and horizontal mirror flip toggle.
+  - Individual checkboxes to enable or disable specific gestures.
+  - Automatically loads and saves changes to `gestures.json`.
+- **Calibration Hint Toasts**:
+  - Contextual advice automatically appears when hand detection drops (*"Move hand closer / improve room lighting"*).
+
+### ⌨️ Keyboard Shortcuts
+| Key | Action |
+| :---: | :--- |
+| **`G`** | Toggle Gesture Detection ON / OFF |
+| **`D`** | Toggle Landmark Skeleton & Debug Telemetry |
+| **`C`** | Toggle Floating Always-On-Top Compact HUD Mode |
+| **`Esc`** | Emergency Stop / Stand Down all ongoing tasks |
+
+---
+
 ## 🌐 Web Interface Quick Start
 
 First, install, then start it:

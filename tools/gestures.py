@@ -20,3 +20,14 @@ def toggle_gesture_debug() -> str:
     detector.toggle_debug()
     state = "shown" if detector.show_debug_window else "hidden"
     return f"Gesture debug HUD is now {state}, Sir."
+
+def open_gesture_hud() -> str:
+    """Launch the Iron Man HUD PyQt6 gesture control interface."""
+    import subprocess
+    import sys
+    try:
+        subprocess.Popen([sys.executable, "-m", "ui.hud_window"])
+        return "Iron Man Gesture HUD launched, Sir."
+    except Exception as e:
+        return f"Failed to launch HUD: {e}"
+
