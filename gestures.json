@@ -7,18 +7,18 @@
     "mirror_camera": true,
     "landmark_smoothing_alpha": 0.5,
     "mouse_smoothing_alpha": 0.4,
-    "debounce_frames": 8,
+    "debounce_frames": 6,
     "cooldown_seconds": 1.0,
     "wake_hold_seconds": 1.0,
-    "min_detection_confidence": 0.7,
-    "min_tracking_confidence": 0.7,
-    "min_hand_size_ratio": 0.08,
-    "edge_margin": 0.03,
+    "min_detection_confidence": 0.5,
+    "min_tracking_confidence": 0.5,
+    "min_hand_size_ratio": 0.035,
+    "edge_margin": 0.02,
     "mouse_active_box": {
-      "x_min": 0.20,
-      "x_max": 0.80,
-      "y_min": 0.20,
-      "y_max": 0.80
+      "x_min": 0.15,
+      "x_max": 0.85,
+      "y_min": 0.15,
+      "y_max": 0.85
     }
   },
   "gestures": {

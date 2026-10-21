@@ -92,22 +92,67 @@ class CameraThread:
         self.thread = None
 
     def start(self):
+        # 1. Try specified camera index
         self.cap = cv2.VideoCapture(self.camera_index)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        
         if not self.cap.isOpened():
-            log_event("GESTURE:CAM_ERR", f"Unable to open camera {self.camera_index}")
+            # 2. Try AVFOUNDATION explicit backend on macOS
+            try:
+                self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_AVFOUNDATION)
+            except Exception:
+                pass
+
+        # 3. If still not opened, try indices 0, 1, 2
+        if self.cap is None or not self.cap.isOpened():
+            for alt_idx in [0, 1, 2]:
+                if alt_idx == self.camera_index:
+                    continue
+                try:
+                    alt_cap = cv2.VideoCapture(alt_idx)
+                    if alt_cap.isOpened():
+                        self.camera_index = alt_idx
+                        self.cap = alt_cap
+                        break
+                except Exception:
+                    pass
+
+        if self.cap and self.cap.isOpened():
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            self.running = True
+            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            self.thread.start()
+            log_event("GESTURE:CAM_OK", f"Camera thread started on index {self.camera_index} at {self.width}x{self.height}")
+            return True
+        else:
+            log_event("GESTURE:CAM_ERR", f"Unable to open camera {self.camera_index}. Starting background retry loop...")
+            self.running = True
+            self.thread = threading.Thread(target=self._retry_connect_loop, daemon=True)
+            self.thread.start()
             return False
 
-        self.running = True
-        self.thread = threading.Thread(target=self._capture_loop, daemon=True)
-        self.thread.start()
-        log_event("GESTURE:CAM_OK", f"Camera thread started at {self.width}x{self.height}")
-        return True
+    def _retry_connect_loop(self):
+        """Continuously attempt camera reconnect if permissions are granted dynamically."""
+        while self.running and (self.cap is None or not self.cap.isOpened()):
+            time.sleep(1.5)
+            for idx in [self.camera_index, 0, 1]:
+                try:
+                    cap = cv2.VideoCapture(idx)
+                    if cap.isOpened():
+                        self.camera_index = idx
+                        self.cap = cap
+                        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                        log_event("GESTURE:CAM_RECOVERED", f"Camera connected dynamically on index {idx}")
+                        self._capture_loop()
+                        return
+                except Exception:
+                    pass
 
     def _capture_loop(self):
         while self.running:
+            if not self.cap or not self.cap.isOpened():
+                time.sleep(0.05)
+                continue
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 time.sleep(0.01)
@@ -228,65 +273,59 @@ class GestureDetector:
         return smoothed
 
     def is_hand_valid(self, lm):
-        """Filter out hands that are too small or too close to frame boundaries."""
+        """Filter out hands that are too small or whose palm center is outside boundaries."""
         wrist = lm[WRIST]
         middle_mcp = lm[MIDDLE_MCP]
         
-        # Hand size ratio
+        # Hand size ratio - comfortable desk distance threshold
         palm_size = euclidean_dist(wrist, middle_mcp)
-        min_ratio = float(self.settings.get("min_hand_size_ratio", 0.08))
+        min_ratio = float(self.settings.get("min_hand_size_ratio", 0.035))
         if palm_size < min_ratio:
             return False, "Hand too small / distant"
             
-        # Edge margin check
-        margin = float(self.settings.get("edge_margin", 0.03))
-        for idx in [WRIST, MIDDLE_MCP, INDEX_TIP, PINKY_MCP]:
-            p = lm[idx]
-            if p["x"] < margin or p["x"] > (1.0 - margin) or p["y"] < margin or p["y"] > (1.0 - margin):
-                return False, "Hand too close to edge"
+        # Edge margin check: Only check palm center (MIDDLE_MCP), do not reject wrist at bottom of frame
+        margin = float(self.settings.get("edge_margin", 0.02))
+        p = lm[MIDDLE_MCP]
+        if p["x"] < margin or p["x"] > (1.0 - margin) or p["y"] < margin or p["y"] > (1.0 - margin):
+            return False, "Hand too close to edge"
                 
         return True, "Valid"
 
     def get_finger_states(self, lm, handedness_label="Right"):
         """
         Determine state of each finger (extended=True, curled=False).
-        STEP 3 Requirements:
-        - Determine each finger as up/down by comparing fingertip landmarks to PIP joints
-          (8 vs 6, 12 vs 10, 16 vs 14, 20 vs 18).
-        - For thumb, compare x positions using handedness (not y), since thumb moves sideways.
-        - Rotation-tolerant: use Euclidean distances from wrist (landmark 0) instead of raw y-coordinates.
+        Rotation- and scale-tolerant using Euclidean distance metrics:
+        - Four fingers: compare distance from wrist (0) to tip vs PIP to wrist.
+        - Thumb: compare span from thumb tip to pinky MCP (17), index MCP (5), and wrist (0).
         """
         wrist = lm[WRIST]
         pinky_mcp = lm[PINKY_MCP]
+        index_mcp = lm[INDEX_MCP]
         
         # 1. Four fingers: Euclidean distance from Wrist (0) to Tip vs PIP to Wrist (0)
-        # When curled into palm/fist: dist(tip, wrist) is significantly smaller than dist(pip, wrist).
-        # When extended: dist(tip, wrist) is significantly greater than dist(pip, wrist).
-        EXTEND_RATIO = 1.15
+        # Ratio of 1.08 allows foreshortened fingers to still register as extended
+        EXTEND_RATIO = 1.08
         index_up = euclidean_dist(lm[INDEX_TIP], wrist) > (euclidean_dist(lm[INDEX_PIP], wrist) * EXTEND_RATIO)
         middle_up = euclidean_dist(lm[MIDDLE_TIP], wrist) > (euclidean_dist(lm[MIDDLE_PIP], wrist) * EXTEND_RATIO)
         ring_up = euclidean_dist(lm[RING_TIP], wrist) > (euclidean_dist(lm[RING_PIP], wrist) * EXTEND_RATIO)
         pinky_up = euclidean_dist(lm[PINKY_TIP], wrist) > (euclidean_dist(lm[PINKY_PIP], wrist) * EXTEND_RATIO)
         
-        # 2. Thumb logic (sideways movement + handedness + rotation tolerance):
-        # In a mirrored camera frame:
-        # - Right Hand: Thumb extends outward to the left (lm[4].x < lm[3].x)
-        # - Left Hand: Thumb extends outward to the right (lm[4].x > lm[3].x)
-        if handedness_label == "Right":
-            thumb_side_extended = (lm[THUMB_TIP]["x"] < lm[THUMB_IP]["x"])
-        else:
-            thumb_side_extended = (lm[THUMB_TIP]["x"] > lm[THUMB_IP]["x"])
-
-        # Distance of thumb tip from pinky MCP (17): shrinks to half when tucked into fist
+        # 2. Thumb logic (anatomical distance expansions, invariant to mirror/handedness):
+        # A curled thumb folds tightly inward towards palm (pinky MCP / index MCP)
+        # An extended thumb moves significantly outward from pinky MCP, index MCP, or wrist
         dist_thumb_pinky = euclidean_dist(lm[THUMB_TIP], pinky_mcp)
         dist_ip_pinky = euclidean_dist(lm[THUMB_IP], pinky_mcp)
-        thumb_span_extended = dist_thumb_pinky > (dist_ip_pinky * 1.18)
+        thumb_span_extended = dist_thumb_pinky > (dist_ip_pinky * 1.08)
 
-        # Thumb up/down vertical extension (for thumbs up / down)
-        delta_y = lm[THUMB_TIP]["y"] - lm[THUMB_MCP]["y"]
-        thumb_vertical_extended = abs(delta_y) > 0.08 and euclidean_dist(lm[THUMB_TIP], wrist) > euclidean_dist(lm[THUMB_MCP], wrist) * 1.1
+        dist_thumb_index = euclidean_dist(lm[THUMB_TIP], index_mcp)
+        dist_ip_index = euclidean_dist(lm[THUMB_IP], index_mcp)
+        thumb_index_extended = dist_thumb_index > (dist_ip_index * 1.10)
 
-        thumb_up = thumb_side_extended or thumb_span_extended or thumb_vertical_extended
+        dist_thumb_wrist = euclidean_dist(lm[THUMB_TIP], wrist)
+        dist_mcp_wrist = euclidean_dist(lm[THUMB_MCP], wrist)
+        thumb_radial_extended = dist_thumb_wrist > (dist_mcp_wrist * 1.12)
+
+        thumb_up = thumb_span_extended or thumb_index_extended or thumb_radial_extended
         
         return {
             "thumb": thumb_up,
@@ -312,66 +351,67 @@ class GestureDetector:
         if swipe_gesture:
             return swipe_gesture, 0.95, {}
 
-        # Check if the 4 non-thumb fingers are all curled (Fist, Thumbs Up, Thumbs Down)
+        # 1. Check if the 4 non-thumb fingers are all curled (Fist, Thumbs Up, Thumbs Down)
         other_curled = (not fingers["index"]) and (not fingers["middle"]) and (not fingers["ring"]) and (not fingers["pinky"])
         
         if other_curled:
             delta_y = lm[THUMB_TIP]["y"] - lm[THUMB_MCP]["y"]
-            # Screen coords: y increases downward
-            if delta_y < -0.06:
+            norm_delta_y = delta_y / palm_span
+            # Screen coords: y increases downward.
+            if norm_delta_y < -0.32:
                 return "thumbs_up", 0.95, {}
-            elif delta_y > 0.06:
+            elif norm_delta_y > 0.32:
                 return "thumbs_down", 0.95, {}
             else:
                 # All 5 curled into ball
                 return "fist", 0.95, {}
 
-        # Check Pinch (distance between thumb tip 4 and index tip 8 normalized by palm span)
+        # 2. Check Pinch (distance between thumb tip 4 and index tip 8 normalized by palm span)
         pinch_dist = euclidean_dist(lm[THUMB_TIP], lm[INDEX_TIP])
         pinch_ratio = pinch_dist / palm_span
-        if pinch_ratio < 0.28:
+        if pinch_ratio < 0.32:
             return "pinch", 0.92, {"pinch_ratio": pinch_ratio}
 
-        # 3. Open Palm (5 fingers extended)
-        if all(fingers.values()):
+        # 3. Open Palm: all 4 main fingers extended, or at least 4 of 5 fingers extended
+        up_count = sum(1 for f in fingers.values() if f)
+        if (fingers["index"] and fingers["middle"] and fingers["ring"] and fingers["pinky"]) or up_count >= 4:
             return "open_palm", 0.95, {}
 
         # 4. Fist fallback
-        if not any(fingers.values()):
+        if up_count == 0:
             return "fist", 0.95, {}
 
         # 5. Peace Sign (Index & Middle extended, Ring & Pinky curled)
         if fingers["index"] and fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
             return "peace", 0.92, {}
 
-        # 6. Index Up (Index extended, others curled)
+        # 6. Index Up (Index extended, Middle, Ring, Pinky curled)
         if fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
-            # Provide normalized index tip coordinates for mouse motion
             return "index_up", 0.94, {"x": lm[INDEX_TIP]["x"], "y": lm[INDEX_TIP]["y"]}
 
         return "unknown", 0.50, {}
 
     def _check_swipe(self):
-        """Detect rapid horizontal wrist displacement over the last 10 frames."""
+        """Detect rapid horizontal wrist displacement over a sliding window."""
         now = time.time()
-        if (now - self.last_swipe_time) < 1.0:
+        if (now - self.last_swipe_time) < 0.8:
             return None
-        if len(self.wrist_x_history) < 8:
+        if len(self.wrist_x_history) < 6:
             return None
             
         t_old, x_old = self.wrist_x_history[0]
         t_new, x_new = self.wrist_x_history[-1]
         dt = t_new - t_old
-        if dt > 0.4:
-            return None  # Too slow to be a swipe
+        if dt > 0.45 or dt < 0.05:
+            return None
             
         dx = x_new - x_old
-        # Threshold: wrist moved at least 20% across frame in < 400ms
-        if dx > 0.20:
+        # Threshold: wrist moved at least 15% across frame in < 450ms
+        if dx > 0.15:
             self.last_swipe_time = now
             self.wrist_x_history.clear()
             return "swipe_right"
-        elif dx < -0.20:
+        elif dx < -0.15:
             self.last_swipe_time = now
             self.wrist_x_history.clear()
             return "swipe_left"
@@ -422,7 +462,7 @@ class GestureDetector:
             norm_y = extra.get("y", 0.5)
             self.actions.trigger_action("index_up", norm_x=norm_x, norm_y=norm_y)
 
-        # Debounce for discrete gestures (8 frames)
+        # Debounce for discrete gestures (graceful decay on noisy frames)
         if detected_gesture in ["fist", "pinch", "peace", "thumbs_up", "thumbs_down", "swipe_left", "swipe_right", "open_palm"]:
             if detected_gesture == self.candidate_gesture:
                 self.candidate_count += 1
@@ -435,8 +475,10 @@ class GestureDetector:
                 self.candidate_count = 1
         else:
             if detected_gesture != "index_up":
-                self.candidate_gesture = None
-                self.candidate_count = 0
+                # Decay instead of instant reset so a 1-frame glitch doesn't kill a held gesture
+                self.candidate_count = max(0, self.candidate_count - 1)
+                if self.candidate_count == 0:
+                    self.candidate_gesture = None
 
         return {
             "gesture": detected_gesture,

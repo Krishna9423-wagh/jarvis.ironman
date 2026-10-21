@@ -23,6 +23,7 @@ class GestureWorkerThread(QtCore.QThread):
         self.running = True
         self.gesture_enabled = True
         self.last_action_desc = ""
+        self.detector.actions.set_active(True, reason="UI Worker initialized")
 
     def run(self):
         log_event("UI:WORKER", "Starting background gesture detection thread...")

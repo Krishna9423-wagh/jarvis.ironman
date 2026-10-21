@@ -41,8 +41,8 @@ class GestureActionController:
         self.box_y_min = float(active_box.get("y_min", 0.20))
         self.box_y_max = float(active_box.get("y_max", 0.80))
         
-        # State management
-        self.is_active = False  # Controlled by wake gesture or voice command
+        # State management - active by default for immediate responsiveness
+        self.is_active = True
         self.last_action_time = {}
         self.default_cooldown = float(self.settings.get("cooldown_seconds", 1.0))
         
